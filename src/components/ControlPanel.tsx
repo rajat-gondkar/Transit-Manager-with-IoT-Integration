@@ -220,8 +220,7 @@ const ControlPanel: React.FC = () => {
           
           // Determine if the bus is going in reverse direction
           const isFirstHalfOfRoute = bus.currentStopIndex < Math.floor(bus.route.length / 2);
-          const isGoingForward = (bus.id === 'Bus1' && isFirstHalfOfRoute) || 
-                              (bus.id === 'Bus2' && !isFirstHalfOfRoute);
+          const isGoingForward = bus.id === 'Bus1' && isFirstHalfOfRoute;
           
           // Determine the next stop (either normal or main road)
           let nextStopDisplay;
@@ -272,8 +271,8 @@ const ControlPanel: React.FC = () => {
             if (bus.currentStopIndex === bus.route.length - 1) {
               // At the end, go backwards
               nextStopIndex = bus.currentStopIndex - 1;
-            } else if (bus.currentStopIndex === 0 && bus.id === 'Bus2') {
-              // Bus2 at start, go forwards
+            } else if (bus.currentStopIndex === 0) {
+              // At start, go forwards
               nextStopIndex = 1;
             } else {
               // Normal movement in current direction

@@ -74,29 +74,6 @@ export const initialMapData: MapData = {
         { id: "D", name: "Main Stop D", position: { x: 900, y: 300 }, isMainStop: true },
       ],
       currentStopIndex: 0
-    },
-    {
-      id: "Bus2",
-      position: { x: 900, y: 300 },
-      capacity: 20,
-      currentPassengers: 0,
-      route: [
-        // Reverse route from D to A with adjusted positions
-        { id: "D", name: "Main Stop D", position: { x: 900, y: 300 }, isMainStop: true },
-        { id: "CD3", name: "Stop CD3", position: { x: 825, y: 300 }, isMainStop: false },
-        { id: "CD2", name: "Stop CD2", position: { x: 775, y: 300 }, isMainStop: false },
-        { id: "CD1", name: "Stop CD1", position: { x: 725, y: 300 }, isMainStop: false },
-        { id: "C", name: "Main Stop C", position: { x: 650, y: 300 }, isMainStop: true },
-        { id: "BC3", name: "Stop BC3", position: { x: 575, y: 300 }, isMainStop: false },
-        { id: "BC2", name: "Stop BC2", position: { x: 500, y: 300 }, isMainStop: false },
-        { id: "BC1", name: "Stop BC1", position: { x: 425, y: 300 }, isMainStop: false },
-        { id: "B", name: "Main Stop B", position: { x: 350, y: 300 }, isMainStop: true },
-        { id: "AB3", name: "Stop AB3", position: { x: 300, y: 300 }, isMainStop: false },
-        { id: "AB2", name: "Stop AB2", position: { x: 250, y: 300 }, isMainStop: false },
-        { id: "AB1", name: "Stop AB1", position: { x: 175, y: 300 }, isMainStop: false },
-        { id: "A", name: "Main Stop A", position: { x: 100, y: 300 }, isMainStop: true },
-      ],
-      currentStopIndex: 0
     }
   ]
 }; 

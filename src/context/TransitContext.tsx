@@ -70,8 +70,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   const [busAnimations, setBusAnimations] = useState<Record<string, BusAnimation>>({});
   // Track direction for each bus
   const [busDirections, setBusDirections] = useState<Record<string, BusDirection>>({
-    'Bus1': { isMovingForward: true },  // Bus1 starts moving from A→D (forward)
-    'Bus2': { isMovingForward: false }  // Bus2 starts moving from D→A (backward)
+    'Bus1': { isMovingForward: true }  // Bus1 starts moving from A→D (forward)
   });
   // Add auto mode toggle state
   const [autoMode, setAutoMode] = useState<boolean>(false);
@@ -166,9 +165,9 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         
         // Passengers can exit only at main stops
         if (currentStop.isMainStop && updatedPassengers > 0) {
-          // Random number of passengers exit (1-3)
+          // Random number of passengers exit (1-10)
           const exitingPassengers = Math.min(
-            Math.floor(Math.random() * 3) + 1, 
+            Math.floor(Math.random() * 10) + 1, 
             updatedPassengers
           );
           updatedPassengers -= exitingPassengers;
@@ -176,9 +175,9 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         
         // Passengers can board at any stop if there's capacity
         if (updatedPassengers < bus.capacity) {
-          // Random number of passengers enter (1-2)
+          // Random number of passengers enter (0-5)
           const enteringPassengers = Math.min(
-            Math.floor(Math.random() * 2) + 1,
+            Math.floor(Math.random() * 6),
             bus.capacity - updatedPassengers
           );
           updatedPassengers += enteringPassengers;
