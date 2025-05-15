@@ -194,9 +194,9 @@ const ControlPanel: React.FC = () => {
   
   return (
     <PanelContainer>
-      <Title>Transit System Control Panel</Title>
+      <Title>Bengaluru Transit Control Panel</Title>
       <Subtitle>
-        Buses will automatically use the main road (in red) when they reach full capacity
+        Buses will use the express route (in red) when they reach full capacity
       </Subtitle>
       
       <AutoModeContainer>
@@ -316,7 +316,9 @@ const ControlPanel: React.FC = () => {
               
               <BusRoute>
                 Direction: <DirectionIndicator $isReverse={!isGoingForward}>
-                  {isGoingForward ? 'Forward (A → D)' : 'Reverse (D → A)'}
+                  {isGoingForward 
+                    ? 'Forward (Koramangala → Bellandur)' 
+                    : 'Reverse (Bellandur → Koramangala)'}
                 </DirectionIndicator>
               </BusRoute>
               
@@ -326,7 +328,7 @@ const ControlPanel: React.FC = () => {
               
               <BusStatus $isMoving={isMoving} $isUsingMainRoad={isUsingMainRoad}>
                 {isMoving 
-                  ? (isUsingMainRoad ? 'Using Main Road' : 'Moving on Regular Road')
+                  ? (isUsingMainRoad ? 'Using Express Route' : 'Moving on Regular Road')
                   : 'Stopped'}
               </BusStatus>
               

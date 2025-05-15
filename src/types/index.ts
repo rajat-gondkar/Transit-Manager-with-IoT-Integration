@@ -1,6 +1,8 @@
 export interface Position {
   x: number;
   y: number;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Stop {

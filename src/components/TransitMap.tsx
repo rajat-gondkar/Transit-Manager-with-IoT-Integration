@@ -55,7 +55,7 @@ const LegendColor = styled.div<{ color: string }>`
   border: 1px solid rgba(255, 255, 255, 0.2);
 `;
 
-const TransitMap: React.FC = () => {
+const LegacyTransitMap: React.FC = () => {
   const { mapData } = useTransit();
   const { stops, roads, buses } = mapData;
 
@@ -127,4 +127,4 @@ const TransitMap: React.FC = () => {
   );
 };
 
-export default TransitMap; 
+export default LegacyTransitMap; 

@@ -1,79 +1,179 @@
 import { MapData } from '../types';
 
-// Define initial map data with main stops (A, B, C, D) and intermediate stops in a linear layout
+// Define initial map data with real Bengaluru stops - in exact requested order
 export const initialMapData: MapData = {
   stops: [
-    // Main stops - now in a linear layout with more spacing
-    { id: "A", name: "Main Stop A", position: { x: 100, y: 300 }, isMainStop: true },
-    { id: "B", name: "Main Stop B", position: { x: 350, y: 300 }, isMainStop: true },
-    { id: "C", name: "Main Stop C", position: { x: 650, y: 300 }, isMainStop: true },
-    { id: "D", name: "Main Stop D", position: { x: 900, y: 300 }, isMainStop: true },
+    // Main stop - Koramangala
+    { 
+      id: "Koramangala", 
+      name: "Koramangala", 
+      position: { 
+        x: 100, 
+        y: 300,
+        lat: 12.9347,
+        lng: 77.6230
+      }, 
+      isMainStop: true 
+    },
     
-    // Intermediate stops between A and B - more spaced out
-    { id: "AB1", name: "Stop AB1", position: { x: 175, y: 300 }, isMainStop: false },
-    { id: "AB2", name: "Stop AB2", position: { x: 250, y: 300 }, isMainStop: false },
-    { id: "AB3", name: "Stop AB3", position: { x: 300, y: 300 }, isMainStop: false },
+    // Intermediate stops between Koramangala and Indiranagar - in requested order
+    { 
+      id: "EGL", 
+      name: "Embassy Golf Links", 
+      position: { 
+        x: 200, 
+        y: 300,
+        lat: 12.9513, 
+        lng: 77.6435
+      }, 
+      isMainStop: false 
+    },
+    { 
+      id: "Domlur", 
+      name: "Domlur", 
+      position: { 
+        x: 250, 
+        y: 300,
+        lat: 12.9609,
+        lng: 77.6387
+      }, 
+      isMainStop: false 
+    },
+    { 
+      id: "Trinity", 
+      name: "Trinity Circle", 
+      position: { 
+        x: 300, 
+        y: 300,
+        lat: 12.9733,
+        lng: 77.6180
+      }, 
+      isMainStop: false 
+    },
     
-    // Intermediate stops between B and C - more spaced out
-    { id: "BC1", name: "Stop BC1", position: { x: 425, y: 300 }, isMainStop: false },
-    { id: "BC2", name: "Stop BC2", position: { x: 500, y: 300 }, isMainStop: false },
-    { id: "BC3", name: "Stop BC3", position: { x: 575, y: 300 }, isMainStop: false },
+    // Main stop - Indiranagar 
+    { 
+      id: "Indiranagar", 
+      name: "Indiranagar", 
+      position: { 
+        x: 350, 
+        y: 300,
+        lat: 12.9784,
+        lng: 77.6408
+      }, 
+      isMainStop: true 
+    },
     
-    // Intermediate stops between C and D - more spaced out
-    { id: "CD1", name: "Stop CD1", position: { x: 725, y: 300 }, isMainStop: false },
-    { id: "CD2", name: "Stop CD2", position: { x: 775, y: 300 }, isMainStop: false },
-    { id: "CD3", name: "Stop CD3", position: { x: 825, y: 300 }, isMainStop: false },
+    // Intermediate stops between Indiranagar and Marathahalli - in requested order
+    { 
+      id: "Doddanekkundi", 
+      name: "Doddanekkundi", 
+      position: { 
+        x: 425, 
+        y: 300,
+        lat: 12.9723,
+        lng: 77.6667
+      }, 
+      isMainStop: false 
+    },
+    { 
+      id: "Spice_Garden", 
+      name: "Spice Garden", 
+      position: { 
+        x: 500, 
+        y: 300,
+        lat: 12.9642,
+        lng: 77.6861
+      }, 
+      isMainStop: false 
+    },
+    
+    // Main stop - Marathahalli
+    { 
+      id: "Marathahalli", 
+      name: "Marathahalli", 
+      position: { 
+        x: 650, 
+        y: 300,
+        lat: 12.9580,
+        lng: 77.6979
+      }, 
+      isMainStop: true 
+    },
+    
+    // Intermediate stops between Marathahalli and Bellandur - in requested order
+    { 
+      id: "Innovative_Multiplex", 
+      name: "Innovative Multiplex", 
+      position: { 
+        x: 725, 
+        y: 300,
+        lat: 12.9491,
+        lng: 77.6996
+      }, 
+      isMainStop: false 
+    },
+    { 
+      id: "Panathur", 
+      name: "Panathur", 
+      position: { 
+        x: 800, 
+        y: 300,
+        lat: 12.9419,
+        lng: 77.6915
+      }, 
+      isMainStop: false 
+    },
+    { 
+      id: "Kadubeesanahalli", 
+      name: "Kadubeesanahalli", 
+      position: { 
+        x: 850, 
+        y: 300,
+        lat: 12.9370,
+        lng: 77.6831
+      }, 
+      isMainStop: false 
+    },
+    
+    // Final main stop - Bellandur
+    { 
+      id: "Bellandur", 
+      name: "Bellandur", 
+      position: { 
+        x: 900, 
+        y: 300,
+        lat: 12.9310, 
+        lng: 77.6767
+      }, 
+      isMainStop: true 
+    }
   ],
   
-  roads: [
-    // Regular roads connecting intermediate stops - now linear with more space
-    // A to B route
-    { from: "A", to: "AB1", isMainRoad: false },
-    { from: "AB1", to: "AB2", isMainRoad: false },
-    { from: "AB2", to: "AB3", isMainRoad: false },
-    { from: "AB3", to: "B", isMainRoad: false },
-    
-    // B to C route
-    { from: "B", to: "BC1", isMainRoad: false },
-    { from: "BC1", to: "BC2", isMainRoad: false },
-    { from: "BC2", to: "BC3", isMainRoad: false },
-    { from: "BC3", to: "C", isMainRoad: false },
-    
-    // C to D route
-    { from: "C", to: "CD1", isMainRoad: false },
-    { from: "CD1", to: "CD2", isMainRoad: false },
-    { from: "CD2", to: "CD3", isMainRoad: false },
-    { from: "CD3", to: "D", isMainRoad: false },
-    
-    // Main roads connecting main stops directly - still linear but parallel above the regular route
-    { from: "A", to: "B", isMainRoad: true },
-    { from: "B", to: "C", isMainRoad: true },
-    { from: "C", to: "D", isMainRoad: true },
-  ],
+  // We'll generate roads dynamically with the routing API
+  roads: [], 
   
   buses: [
     {
       id: "Bus1",
-      position: { x: 100, y: 300 },
+      position: { 
+        x: 100, 
+        y: 300,
+        lat: 12.9347,
+        lng: 77.6230 
+      },
       capacity: 20,
       currentPassengers: 0,
-      route: [
-        // Full route from A to D with adjusted positions
-        { id: "A", name: "Main Stop A", position: { x: 100, y: 300 }, isMainStop: true },
-        { id: "AB1", name: "Stop AB1", position: { x: 175, y: 300 }, isMainStop: false },
-        { id: "AB2", name: "Stop AB2", position: { x: 250, y: 300 }, isMainStop: false },
-        { id: "AB3", name: "Stop AB3", position: { x: 300, y: 300 }, isMainStop: false },
-        { id: "B", name: "Main Stop B", position: { x: 350, y: 300 }, isMainStop: true },
-        { id: "BC1", name: "Stop BC1", position: { x: 425, y: 300 }, isMainStop: false },
-        { id: "BC2", name: "Stop BC2", position: { x: 500, y: 300 }, isMainStop: false },
-        { id: "BC3", name: "Stop BC3", position: { x: 575, y: 300 }, isMainStop: false },
-        { id: "C", name: "Main Stop C", position: { x: 650, y: 300 }, isMainStop: true },
-        { id: "CD1", name: "Stop CD1", position: { x: 725, y: 300 }, isMainStop: false },
-        { id: "CD2", name: "Stop CD2", position: { x: 775, y: 300 }, isMainStop: false },
-        { id: "CD3", name: "Stop CD3", position: { x: 825, y: 300 }, isMainStop: false },
-        { id: "D", name: "Main Stop D", position: { x: 900, y: 300 }, isMainStop: true },
-      ],
+      route: [],  // This will be populated programmatically after initialization
       currentStopIndex: 0
     }
   ]
-}; 
+};
+
+// Initialize bus routes with stops
+initialMapData.buses.forEach(bus => {
+  // For Bus1, assign all stops in order
+  if (bus.id === "Bus1") {
+    bus.route = [...initialMapData.stops];
+  }
+}); 

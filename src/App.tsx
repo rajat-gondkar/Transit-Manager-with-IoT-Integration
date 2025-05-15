@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { TransitProvider } from './context/TransitContext';
-import TransitMap from './components/TransitMap';
+import MapComponent from './components/MapComponent';
 import ControlPanel from './components/ControlPanel';
 
 const AppContainer = styled.div`
@@ -15,6 +15,10 @@ const AppContainer = styled.div`
 const Header = styled.header`
   text-align: center;
   margin-bottom: 30px;
+  padding: 20px 0;
+  background: linear-gradient(135deg, rgba(40, 40, 40, 0.9), rgba(30, 30, 30, 0.95));
+  border-radius: 10px;
+  box-shadow: 0 3px 15px rgba(0, 0, 0, 0.4);
 `;
 
 const Title = styled.h1`
@@ -22,6 +26,10 @@ const Title = styled.h1`
   margin-bottom: 10px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   font-size: 2.5rem;
+  
+  span {
+    color: #3498db;
+  }
 `;
 
 const Subtitle = styled.p`
@@ -36,11 +44,13 @@ function App() {
     <TransitProvider>
       <AppContainer>
         <Header>
-          <Title>Real-Time Public Transit Management System</Title>
-          <Subtitle>Interactive Simulation with Dynamic Routing</Subtitle>
+          <Title>Bengaluru <span>Transit System</span></Title>
+          <Subtitle>
+            Real-time bus tracking along Koramangala-Indiranagar-Marathahalli-Bellandur route
+          </Subtitle>
         </Header>
         
-        <TransitMap />
+        <MapComponent />
         <ControlPanel />
       </AppContainer>
     </TransitProvider>
