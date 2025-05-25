@@ -130,8 +130,8 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   // Graph representation of the transit network
   const [transitGraph, setTransitGraph] = useState<Graph>({});
   
-  // Add a ref to track the last stop where passengers were managed
-  const lastPassengerStopRef = useRef<Record<string, string>>({});
+  // Replace lastStopUpdateRef to track stop index instead of stopId/timestamp
+  const lastStopIndexRef = useRef<Record<string, number>>({});
   
   // Add a state to track route calculation status
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<Record<string, boolean>>({});
@@ -146,9 +146,6 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   const deploymentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const nextBusIdRef = useRef<number>(2); // Start from 2 since Bus1 exists initially
   const pendingDeploymentRef = useRef<boolean>(false);
-  
-  // Add this near the top with other refs
-  const lastStopUpdateRef = useRef<Record<string, { stopId: string; timestamp: number }>>({});
   
   // Build transit graph from stops
   const buildTransitGraph = useCallback(async () => {
@@ -1027,52 +1024,42 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     
   }, [mapData.buses, busDirections, findNextMainStop, visualRoutes, findShortestPath, transitGraph, isCalculatingRoute]);
   
-  // Memoize handleAutoPassengers to prevent dependency changes
-  const handleAutoPassengers = useCallback(() => {
+  // Add this function near handleAutoPassengers
+  const handleAutoPassengersForBus = useCallback((busId: string) => {
     setMapData(prevData => {
       const updatedBuses = prevData.buses.map(bus => {
+        if (bus.id !== busId) return bus;
         const currentStop = bus.route[bus.currentStopIndex];
         let updatedPassengers = bus.currentPassengers;
-        
+
         console.log(`\n--- Passenger Update for Bus ${bus.id} at ${currentStop.name} ---`);
         console.log(`Current passengers: ${updatedPassengers}/${bus.capacity}`);
-        
+
         // Increment the visit count for the current station
         incrementStationVisit(currentStop.name);
         console.log(`Recorded visit at station: ${currentStop.name}`);
-        
+
         // PASSENGER EXIT RULES
-        
-        // Special case for Bellandur - make all passengers exit at final stop
         if (currentStop.id === "Bellandur") {
-          const exiting = updatedPassengers; // All passengers exit at Bellandur
+          const exiting = updatedPassengers;
           console.log(`🚶‍♂️ STOP: ${currentStop.name} - All ${exiting} passengers exit at final stop`);
-          updatedPassengers = 0; // All passengers exit at Bellandur
-        } 
-        // Main stops: 1-10 passengers exit, no entry
-        else if (currentStop.isMainStop && updatedPassengers > 0) {
-          // Random number of passengers exit (1-10)
+          updatedPassengers = 0;
+        } else if (currentStop.isMainStop && updatedPassengers > 0) {
           const exitingPassengers = Math.min(
-            Math.floor(Math.random() * 10) + 1, // 1-10 passengers exit
+            Math.floor(Math.random() * 10) + 1,
             updatedPassengers
           );
           console.log(`🚶‍♂️ STOP: ${currentStop.name} - ${exitingPassengers} passengers exit (1-10 at main stop)`);
           updatedPassengers -= exitingPassengers;
           console.log(`No new passengers boarding at ${currentStop.name} (main stop - exits only)`);
-        }
-        // Intermediate stops: 0-10 passengers can enter, no exits
-        else if (!currentStop.isMainStop && currentStop.id !== "Bellandur") {
-          // Random number of passengers enter (0-10)
+        } else if (!currentStop.isMainStop && currentStop.id !== "Bellandur") {
           const enteringPassengers = Math.min(
-            Math.floor(Math.random() * 11), // 0-10 passengers enter
+            Math.floor(Math.random() * 11),
             bus.capacity - updatedPassengers
           );
-          
           if (enteringPassengers > 0) {
             console.log(`🧍‍♂️ STOP: ${currentStop.name} - ${enteringPassengers} new passengers board (0-10 at intermediate stop)`);
             updatedPassengers += enteringPassengers;
-            
-            // Check if bus is now full
             if (updatedPassengers >= bus.capacity) {
               console.log(`⚠️ BUS NOW FULL: ${updatedPassengers}/${bus.capacity} - Will use express route to next main stop`);
             }
@@ -1080,15 +1067,12 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             console.log(`No new passengers boarding at ${currentStop.name}`);
           }
         }
-        
         console.log(`Final passengers after stop: ${updatedPassengers}/${bus.capacity}`);
-        
         return {
           ...bus,
           currentPassengers: updatedPassengers
         };
       });
-      
       return {
         ...prevData,
         buses: updatedBuses
@@ -1225,25 +1209,13 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
 
           const completedBus = mapData.buses.find(bus => bus.id === completedBusId);
           if (completedBus) {
-            const currentStop = completedBus.route[completedBus.currentStopIndex];
-            const currentStopId = currentStop.id;
-            
-            // Check if we've already handled this stop recently
-            const lastUpdate = lastStopUpdateRef.current[completedBusId];
-            const now = Date.now();
-            const MIN_UPDATE_INTERVAL = 2000; // 2 seconds minimum between updates
+            const currentStopIndex = completedBus.currentStopIndex;
+            const lastStopIndex = lastStopIndexRef.current[completedBusId];
 
-            if (!lastUpdate || 
-                lastUpdate.stopId !== currentStopId || 
-                (now - lastUpdate.timestamp) > MIN_UPDATE_INTERVAL) {
-              
-              console.log(`Bus ${completedBusId} arrived at ${currentStop.name}`);
-              
-              // Update the last stop record
-              lastStopUpdateRef.current[completedBusId] = {
-                stopId: currentStopId,
-                timestamp: now
-              };
+            if (lastStopIndex !== currentStopIndex) {
+              // Only update if the stop index has changed
+              console.log(`Bus ${completedBusId} arrived at stop index ${currentStopIndex}`);
+              lastStopIndexRef.current[completedBusId] = currentStopIndex;
 
               setTimeout(() => {
                 // Check if all buses have reached Bellandur
@@ -1254,14 +1226,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
                 if (allBusesAtBellandur) {
                   console.log("All buses have reached Bellandur - Resetting station counts");
                   resetStationCounts();
-                } else if (currentStop.id === "Bellandur") {
+                } else if (completedBus.route[currentStopIndex].id === "Bellandur") {
                   console.log(`Bus ${completedBusId} reached Bellandur, waiting for other buses`);
                 }
 
-                handleAutoPassengers();
+                handleAutoPassengersForBus(completedBusId);
               }, 100);
             } else {
-              console.log(`Skipping passenger update for ${completedBusId} at ${currentStopId} - too soon since last update`);
+              console.log(`Skipping passenger update for ${completedBusId} at stop index ${currentStopIndex} - already processed`);
             }
           }
         }
@@ -1271,7 +1243,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     }, 33);
 
     return () => clearInterval(animationInterval);
-  }, [autoMode, handleAutoPassengers, mapData.buses, busAnimations]);
+  }, [autoMode, handleAutoPassengersForBus, mapData.buses, busAnimations]);
   
   // Use a separate effect for checking if any bus is moving
   const anyBusMovingRef = useRef(false);
@@ -1644,7 +1616,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
       setDeploymentTimer(45);
       clearDeploymentFlag();
       pendingDeploymentRef.current = false;
-      lastStopUpdateRef.current = {}; // Clear the last stop updates
+      lastStopIndexRef.current = {}; // Clear the last stop index tracking
       if (deploymentIntervalRef.current) {
         clearInterval(deploymentIntervalRef.current);
         deploymentIntervalRef.current = null;
