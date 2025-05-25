@@ -147,6 +147,9 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   const nextBusIdRef = useRef<number>(2); // Start from 2 since Bus1 exists initially
   const pendingDeploymentRef = useRef<boolean>(false);
   
+  // Add a ref to track last deployment time
+  const lastDeploymentTimeRef = useRef<number>(Date.now());
+  
   // Build transit graph from stops
   const buildTransitGraph = useCallback(async () => {
     console.log("Building transit graph");
@@ -704,6 +707,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
       setIsCalculatingRoute(prev => ({ ...prev, [busId]: true }));
       
       console.log(`🚌 BUS ${busId} IS FULL - CALCULATING EXPRESS ROUTE WITH DIJKSTRA (Bus will wait)`);
+
+      // Trigger immediate deployment if at intermediate station and not at max buses
+      if (!currentStop.isMainStop && autoMode && totalBusesDeployed < 4) {
+        console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
+        console.log(`🚌 Triggering immediate bus deployment...`);
+        pendingDeploymentRef.current = true;
+        setDeploymentTimer(1); // Set to 1 to trigger immediate deployment
+      }
       
       try {
         // First, calculate the next main stop index
@@ -1395,15 +1406,25 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
           // Check if the bus is at Bellandur - if so, don't allow adding passengers
           const currentStop = bus.route[bus.currentStopIndex];
           if (currentStop.id === "Bellandur") {
-            console.log("Can't add passengers at final stop (Bellandur)");
+            console.log("🚫 Can't add passengers at final stop (Bellandur)");
             return bus; // Don't add passengers at Bellandur
           }
           
           // Otherwise add passengers if there's capacity
           if (bus.currentPassengers < bus.capacity) {
+            const newPassengerCount = bus.currentPassengers + 1;
+            
+            // Check if bus becomes full at an intermediate station
+            if (newPassengerCount === bus.capacity && !currentStop.isMainStop && autoMode && totalBusesDeployed < 4) {
+              console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
+              console.log(`🚌 Triggering immediate bus deployment...`);
+              pendingDeploymentRef.current = true;
+              setDeploymentTimer(1); // Set to 1 to trigger immediate deployment
+            }
+            
             return {
               ...bus,
-              currentPassengers: bus.currentPassengers + 1
+              currentPassengers: newPassengerCount
             };
           }
         }
@@ -1470,30 +1491,32 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     return -1;
   };
 
-  // Update the deployNewBus function to ensure sequential deployment
+  // Update the deployNewBus function to handle both timer-based and immediate deployments
   const deployNewBus = useCallback(() => {
     try {
       if (totalBusesDeployed >= 4) {
-        console.log("Cannot deploy new bus: Maximum buses reached");
+        console.log("🛑 Cannot deploy new bus: Maximum buses reached (4/4)");
         return;
       }
 
       setMapData(prevData => {
-        // Verify the current sequence and get the next bus number
         const nextBusNumber = verifyBusSequence(prevData.buses);
-        console.log(`Verified bus sequence. Next bus should be: Bus${nextBusNumber}`);
-
+        
         if (nextBusNumber === -1 || nextBusNumber > 4) {
-          console.log("Invalid bus number or maximum reached");
+          console.log("❌ Invalid bus number or maximum reached");
+          isDeployingRef.current = false;
           return prevData;
         }
 
         const busId = `Bus${nextBusNumber}`;
-        console.log(`Attempting to deploy ${busId}. Current buses: ${prevData.buses.map(b => b.id).join(', ')}`);
+        console.log(`\n=== 🚍 DEPLOYING NEW BUS ===`);
+        console.log(`🆔 Bus ID: ${busId}`);
+        console.log(`📊 Current fleet: ${prevData.buses.map(b => b.id).join(', ')}`);
+        console.log(`📍 Starting at: Koramangala`);
 
-        // Check if bus already exists
         if (prevData.buses.some(bus => bus.id === busId)) {
-          console.log(`Bus ${busId} already exists, skipping deployment`);
+          console.log(`❌ ${busId} already exists in the fleet`);
+          isDeployingRef.current = false;
           return prevData;
         }
 
@@ -1511,116 +1534,104 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
           currentStopIndex: 0
         };
 
-        // Update bus directions
         setBusDirections(prev => ({
           ...prev,
           [busId]: { isMovingForward: true }
         }));
 
-        // Update next bus ID ref
         nextBusIdRef.current = nextBusNumber + 1;
-
-        // Update total buses deployed
         const newBuses = [...prevData.buses, newBus];
         setTotalBusesDeployed(newBuses.length);
 
-        console.log(`Successfully deployed ${busId}. Total buses: ${newBuses.length}`);
+        console.log(`✅ ${busId} successfully deployed`);
+        console.log(`📈 Total buses now: ${newBuses.length}/4`);
+        console.log(`=========================\n`);
+
+        // Clear the deployment flag after successful deployment
+        setTimeout(() => {
+          isDeployingRef.current = false;
+        }, 100);
+
         return {
           ...prevData,
           buses: newBuses
         };
       });
     } catch (error) {
-      console.error("Error deploying new bus:", error);
-      // Reset deployment state on error
+      console.error("❌ Error deploying new bus:", error);
       clearDeploymentFlag();
-      pendingDeploymentRef.current = true; // Mark for retry
+      pendingDeploymentRef.current = true;
     }
   }, [totalBusesDeployed]);
 
   // Update the deployment timer effect
   useEffect(() => {
     if (autoMode && totalBusesDeployed < 4) {
-      console.log(`Starting deployment timer. Current buses: ${totalBusesDeployed}/4`);
+      console.log(`\n🔄 Starting deployment system`);
+      console.log(`📊 Current fleet size: ${totalBusesDeployed}/4`);
       
-      // Clear any existing timers
-      clearDeploymentFlag();
-      if (deploymentIntervalRef.current) {
-        clearInterval(deploymentIntervalRef.current);
-        deploymentIntervalRef.current = null;
-      }
-      
-      // Start the countdown
-      deploymentIntervalRef.current = setInterval(() => {
-        setDeploymentTimer(prev => {
-          // Check if we have a pending deployment from previous error
-          if (pendingDeploymentRef.current && !isDeployingRef.current) {
-            console.log("Attempting to process pending deployment");
+      const timer = setInterval(() => {
+        setDeploymentTimer(prevTimer => {
+          // Handle immediate deployment from full bus
+          if (pendingDeploymentRef.current && prevTimer <= 1) {
+            console.log(`\n🚨 IMMEDIATE DEPLOYMENT TRIGGERED`);
+            console.log(`📝 Reason: Bus full at intermediate station`);
+            pendingDeploymentRef.current = false;
             isDeployingRef.current = true;
-            setTimeout(() => {
-              deployNewBus();
-              pendingDeploymentRef.current = false;
-              clearDeploymentFlag();
-            }, 100);
+            deployNewBus();
+            lastDeploymentTimeRef.current = Date.now();
+            return 45; // Reset timer
           }
+          
+          // Handle regular timer-based deployment
+          if (prevTimer <= 0) {
+            // Add debounce check - ensure at least 2 seconds between deployments
+            const now = Date.now();
+            if (now - lastDeploymentTimeRef.current < 2000) {
+              console.log(`⏳ Deployment throttled - too soon after last deployment`);
+              return 45; // Reset timer
+            }
 
-          // Ensure timer doesn't go negative
-          if (prev <= 0) {
-            const canDeploy = !isDeployingRef.current && totalBusesDeployed < 4;
-
-            if (canDeploy) {
-              console.log("Timer reached 0, initiating new bus deployment");
-              isDeployingRef.current = true;
-              
-              // Set a safety timeout
-              deploymentTimeoutRef.current = setTimeout(() => {
-                console.log("Safety timeout triggered - clearing deployment flag");
-                clearDeploymentFlag();
-                // Mark for retry if we haven't reached max buses
-                if (totalBusesDeployed < 4) {
-                  pendingDeploymentRef.current = true;
-                  console.log("Marking deployment for retry");
-                }
-              }, 5000);
-              
-              // Attempt deployment
-              setTimeout(() => {
-                try {
-                  deployNewBus();
-                } finally {
-                  clearDeploymentFlag();
-                }
-              }, 100);
+            console.log(`\n⏰ TIMER-BASED DEPLOYMENT TRIGGERED`);
+            console.log(`📝 Reason: Regular interval (45s) completed`);
+            if (!isDeployingRef.current) {
+              deployNewBus();
+              lastDeploymentTimeRef.current = now;
             } else {
-              console.log("Skipping deployment:", 
-                isDeployingRef.current ? "Deployment in progress" : 
-                totalBusesDeployed >= 4 ? "Maximum buses reached" : "Unknown reason");
+              console.log(`⏳ Waiting for previous deployment to complete...`);
+              setTimeout(() => {
+                if (totalBusesDeployed < 4) {
+                  deployNewBus();
+                  lastDeploymentTimeRef.current = Date.now();
+                }
+              }, 500);
             }
             return 45; // Reset timer
           }
-          return prev - 1;
+
+          // Log timer status every 15 seconds
+          if (prevTimer % 15 === 0) {
+            console.log(`⏳ Next regular deployment in: ${prevTimer}s`);
+          }
+          
+          return prevTimer - 1;
         });
       }, 1000);
-      
-      // Cleanup function
+
+      deploymentIntervalRef.current = timer;
+
       return () => {
-        clearDeploymentFlag();
-        pendingDeploymentRef.current = false;
         if (deploymentIntervalRef.current) {
           clearInterval(deploymentIntervalRef.current);
           deploymentIntervalRef.current = null;
         }
       };
-    } else if (!autoMode) {
-      // Reset all states when auto mode is turned off
-      setDeploymentTimer(45);
-      clearDeploymentFlag();
-      pendingDeploymentRef.current = false;
-      lastStopIndexRef.current = {}; // Clear the last stop index tracking
+    } else {
       if (deploymentIntervalRef.current) {
         clearInterval(deploymentIntervalRef.current);
         deploymentIntervalRef.current = null;
       }
+      setDeploymentTimer(45);
     }
   }, [autoMode, totalBusesDeployed, deployNewBus]);
 
