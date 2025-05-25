@@ -147,8 +147,20 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   const nextBusIdRef = useRef<number>(2); // Start from 2 since Bus1 exists initially
   const pendingDeploymentRef = useRef<boolean>(false);
   
-  // Add a ref to track last deployment time
+  // Add a ref to track the last deployment time
   const lastDeploymentTimeRef = useRef<number>(Date.now());
+  const deploymentDebounceTimeRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Add a ref to track the bus that triggered immediate deployment
+  const fullBusIdRef = useRef<string | null>(null);
+  
+  // Add a ref to track the full bus state with more details
+  const fullBusStateRef = useRef<{
+    busId: string,
+    currentStop: string,
+    currentStopIndex: number,
+    route: Stop[]
+  } | null>(null);
   
   // Build transit graph from stops
   const buildTransitGraph = useCallback(async () => {
@@ -710,10 +722,37 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
 
       // Trigger immediate deployment if at intermediate station and not at max buses
       if (!currentStop.isMainStop && autoMode && totalBusesDeployed < 4) {
-        console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
-        console.log(`🚌 Triggering immediate bus deployment...`);
-        pendingDeploymentRef.current = true;
-        setDeploymentTimer(1); // Set to 1 to trigger immediate deployment
+        // Check if enough time has passed since last deployment
+        const now = Date.now();
+        const timeSinceLastDeployment = now - lastDeploymentTimeRef.current;
+        
+        if (timeSinceLastDeployment >= 2000) { // Only trigger if 2 seconds have passed
+          console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
+          console.log(`🚌 Triggering immediate bus deployment...`);
+          
+          // Store detailed bus state
+          fullBusStateRef.current = {
+            busId,
+            currentStop: currentStop.name,
+            currentStopIndex: bus.currentStopIndex,
+            route: [...bus.route]
+          };
+          
+          console.log(`💾 Stored state - Bus: ${busId}, Current Stop: ${currentStop.name}, Index: ${bus.currentStopIndex}`);
+          
+          // Use debounced deployment
+          if (deploymentDebounceTimeRef.current) {
+            clearTimeout(deploymentDebounceTimeRef.current);
+          }
+          
+          deploymentDebounceTimeRef.current = setTimeout(() => {
+            pendingDeploymentRef.current = true;
+            setDeploymentTimer(1);
+            deploymentDebounceTimeRef.current = null;
+          }, 100);
+        } else {
+          console.log(`⏳ Skipping immediate deployment - only ${timeSinceLastDeployment}ms since last deployment`);
+        }
       }
       
       try {
@@ -1419,6 +1458,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
               console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
               console.log(`🚌 Triggering immediate bus deployment...`);
               pendingDeploymentRef.current = true;
+              fullBusIdRef.current = busId; // Store the ID of the full bus
               setDeploymentTimer(1); // Set to 1 to trigger immediate deployment
             }
             
@@ -1491,13 +1531,35 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     return -1;
   };
 
-  // Update the deployNewBus function to handle both timer-based and immediate deployments
+  // Update the deployNewBus function with debouncing
   const deployNewBus = useCallback(() => {
     try {
+      // Check if enough time has passed since last deployment
+      const now = Date.now();
+      const timeSinceLastDeployment = now - lastDeploymentTimeRef.current;
+      
+      if (timeSinceLastDeployment < 2000) { // 2 seconds debounce
+        console.log(`⏳ Deployment throttled - only ${timeSinceLastDeployment}ms since last deployment (minimum 2000ms)`);
+        return;
+      }
+
       if (totalBusesDeployed >= 4) {
         console.log("🛑 Cannot deploy new bus: Maximum buses reached (4/4)");
         return;
       }
+
+      // Clear any existing debounce timeout
+      if (deploymentDebounceTimeRef.current) {
+        clearTimeout(deploymentDebounceTimeRef.current);
+        deploymentDebounceTimeRef.current = null;
+      }
+
+      // Capture the state at the start of deployment
+      const currentFullBusState = fullBusStateRef.current;
+      const isImmediateDeployment = pendingDeploymentRef.current && currentFullBusState !== null;
+
+      // Update last deployment time
+      lastDeploymentTimeRef.current = now;
 
       setMapData(prevData => {
         const nextBusNumber = verifyBusSequence(prevData.buses);
@@ -1509,10 +1571,47 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         }
 
         const busId = `Bus${nextBusNumber}`;
+        
+        // Find deployment location based on whether it's an immediate deployment
+        let deploymentStop = prevData.stops[0]; // Default to Koramangala
+        let deploymentIndex = 0;
+        
+        // Check if this is an immediate deployment due to a full bus
+        if (isImmediateDeployment && currentFullBusState) {
+          console.log(`\n🔍 Finding deployment location for full bus scenario:`);
+          console.log(`- Full bus at: ${currentFullBusState.currentStop}`);
+          console.log(`- Current index: ${currentFullBusState.currentStopIndex}`);
+          
+          // Search backwards from the stored stop index to find last main station
+          let foundMainStation = false;
+          for (let i = currentFullBusState.currentStopIndex - 1; i >= 0; i--) {
+            const stop = currentFullBusState.route[i];
+            if (stop.isMainStop) {
+              deploymentStop = stop;
+              deploymentIndex = i;
+              foundMainStation = true;
+              console.log(`✨ Found last main station: ${stop.name} at index ${i}`);
+              break;
+            }
+          }
+          
+          if (!foundMainStation) {
+            console.log(`⚠️ No main station found before ${currentFullBusState.currentStop}, defaulting to Koramangala`);
+          }
+          
+          // Log the deployment decision
+          console.log(`\n📌 Deployment Decision:`);
+          console.log(`- Original full bus location: ${currentFullBusState.currentStop}`);
+          console.log(`- Selected deployment station: ${deploymentStop.name}`);
+          console.log(`- Deployment index: ${deploymentIndex}`);
+        } else {
+          console.log(`\n📌 Regular deployment at Koramangala (not a full bus scenario)`);
+        }
+
         console.log(`\n=== 🚍 DEPLOYING NEW BUS ===`);
         console.log(`🆔 Bus ID: ${busId}`);
         console.log(`📊 Current fleet: ${prevData.buses.map(b => b.id).join(', ')}`);
-        console.log(`📍 Starting at: Koramangala`);
+        console.log(`📍 Starting at: ${deploymentStop.name}`);
 
         if (prevData.buses.some(bus => bus.id === busId)) {
           console.log(`❌ ${busId} already exists in the fleet`);
@@ -1523,15 +1622,15 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         const newBus: Bus = {
           id: busId,
           position: {
-            x: 100,
-            y: 300,
-            lat: 12.9347,
-            lng: 77.6230
+            x: deploymentStop.position.x,
+            y: deploymentStop.position.y,
+            lat: deploymentStop.position.lat,
+            lng: deploymentStop.position.lng
           },
           capacity: 20,
           currentPassengers: 0,
           route: [...prevData.stops],
-          currentStopIndex: 0
+          currentStopIndex: deploymentIndex
         };
 
         setBusDirections(prev => ({
@@ -1543,13 +1642,15 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         const newBuses = [...prevData.buses, newBus];
         setTotalBusesDeployed(newBuses.length);
 
-        console.log(`✅ ${busId} successfully deployed`);
+        console.log(`✅ ${busId} successfully deployed at ${deploymentStop.name}`);
         console.log(`📈 Total buses now: ${newBuses.length}/4`);
         console.log(`=========================\n`);
 
-        // Clear the deployment flag after successful deployment
+        // Clear all deployment flags and states after successful deployment
         setTimeout(() => {
           isDeployingRef.current = false;
+          pendingDeploymentRef.current = false;
+          fullBusStateRef.current = null;
         }, 100);
 
         return {
@@ -1560,7 +1661,8 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     } catch (error) {
       console.error("❌ Error deploying new bus:", error);
       clearDeploymentFlag();
-      pendingDeploymentRef.current = true;
+      pendingDeploymentRef.current = false;
+      fullBusStateRef.current = null; // Clear the full bus state on error
     }
   }, [totalBusesDeployed]);
 
@@ -1574,9 +1676,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         setDeploymentTimer(prevTimer => {
           // Handle immediate deployment from full bus
           if (pendingDeploymentRef.current && prevTimer <= 1) {
+            const fullBusState = fullBusStateRef.current;
             console.log(`\n🚨 IMMEDIATE DEPLOYMENT TRIGGERED`);
-            console.log(`📝 Reason: Bus full at intermediate station`);
-            pendingDeploymentRef.current = false;
+            console.log(`📝 Reason: Bus full at intermediate station ${fullBusState?.currentStop || 'Unknown'}`);
+            if (fullBusState) {
+              console.log(`📍 Last recorded state: ${JSON.stringify(fullBusState, null, 2)}`);
+            }
+            
+            // Don't clear the state here - let deployNewBus handle it
             isDeployingRef.current = true;
             deployNewBus();
             lastDeploymentTimeRef.current = Date.now();
@@ -1594,6 +1701,11 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
 
             console.log(`\n⏰ TIMER-BASED DEPLOYMENT TRIGGERED`);
             console.log(`📝 Reason: Regular interval (45s) completed`);
+            
+            // Clear any pending immediate deployment state for regular deployments
+            pendingDeploymentRef.current = false;
+            fullBusStateRef.current = null;
+            
             if (!isDeployingRef.current) {
               deployNewBus();
               lastDeploymentTimeRef.current = now;
