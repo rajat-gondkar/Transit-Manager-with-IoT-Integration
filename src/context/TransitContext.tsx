@@ -141,9 +141,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   const [totalBusesDeployed, setTotalBusesDeployed] = useState<number>(1); // Start with 1 bus
   const deploymentIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Add this near the top with other refs
+  // Add these refs near the top with other refs
   const isDeployingRef = useRef<boolean>(false);
   const deploymentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const nextBusIdRef = useRef<number>(2); // Start from 2 since Bus1 exists initially
+  const pendingDeploymentRef = useRef<boolean>(false);
+  
+  // Add this near the top with other refs
+  const lastStopUpdateRef = useRef<Record<string, { stopId: string; timestamp: number }>>({});
   
   // Build transit graph from stops
   const buildTransitGraph = useCallback(async () => {
@@ -1094,15 +1099,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   // Animation interval - updated for velocity-based movement
   useEffect(() => {
     const animationInterval = setInterval(() => {
-      // Check if there are any active animations first, to avoid unnecessary state updates
       const hasActiveAnimations = Object.values(busAnimations).some(anim => anim.isMoving);
-      if (!hasActiveAnimations) return; // No need to update state if no animations
-      
+      if (!hasActiveAnimations) return;
+
       setBusAnimations(prevAnimations => {
         const updatedAnimations = { ...prevAnimations };
         let animationCompleted = false;
         let completedBusId = '';
-        
+
         Object.keys(updatedAnimations).forEach(busId => {
           const animation = updatedAnimations[busId];
           if (animation.isMoving) {
@@ -1136,7 +1140,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
               // If still moving along the route
               if (newProgress < 1) {
                 updatedAnimations[busId] = {
-                  ...updatedAnimations[busId],
+                  ...animation,
                   progress: newProgress
                 };
               } else {
@@ -1147,11 +1151,11 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
                   progress: 0,
                   routeIndex: 0
                 };
-                
+
                 animationCompleted = true;
                 completedBusId = busId;
                 console.log(`Animation completed for bus: ${busId} after following route with ${routeLength} points`);
-                
+
                 // Update bus position when animation is complete
                 setMapData(prevData => {
                   const updatedBuses = prevData.buses.map(bus => {
@@ -1188,7 +1192,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
                   isMoving: false,
                   progress: 0
                 };
-                
+
                 animationCompleted = true;
                 completedBusId = busId;
                 console.log(`Animation completed for bus: ${busId} (fallback)`);
@@ -1214,45 +1218,58 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             }
           }
         });
-        
+
         // Handle auto passenger management when animation is complete
         if (animationCompleted && autoMode) {
           console.log("Animation completed - checking bus status");
-          
+
           const completedBus = mapData.buses.find(bus => bus.id === completedBusId);
-          
           if (completedBus) {
             const currentStop = completedBus.route[completedBus.currentStopIndex];
             const currentStopId = currentStop.id;
-            const lastStopId = lastPassengerStopRef.current[completedBusId];
             
-            if (currentStopId !== lastStopId) {
-              console.log(`Bus ${completedBusId} arrived at ${currentStop.name}`);
-              lastPassengerStopRef.current[completedBusId] = currentStopId;
+            // Check if we've already handled this stop recently
+            const lastUpdate = lastStopUpdateRef.current[completedBusId];
+            const now = Date.now();
+            const MIN_UPDATE_INTERVAL = 2000; // 2 seconds minimum between updates
+
+            if (!lastUpdate || 
+                lastUpdate.stopId !== currentStopId || 
+                (now - lastUpdate.timestamp) > MIN_UPDATE_INTERVAL) {
               
+              console.log(`Bus ${completedBusId} arrived at ${currentStop.name}`);
+              
+              // Update the last stop record
+              lastStopUpdateRef.current[completedBusId] = {
+                stopId: currentStopId,
+                timestamp: now
+              };
+
               setTimeout(() => {
                 // Check if all buses have reached Bellandur
                 const allBusesAtBellandur = mapData.buses.every(bus => 
                   bus.route[bus.currentStopIndex].id === "Bellandur"
                 );
-                
+
                 if (allBusesAtBellandur) {
                   console.log("All buses have reached Bellandur - Resetting station counts");
                   resetStationCounts();
                 } else if (currentStop.id === "Bellandur") {
                   console.log(`Bus ${completedBusId} reached Bellandur, waiting for other buses`);
                 }
-                
+
                 handleAutoPassengers();
               }, 100);
+            } else {
+              console.log(`Skipping passenger update for ${completedBusId} at ${currentStopId} - too soon since last update`);
             }
           }
         }
-        
+
         return updatedAnimations;
       });
-    }, 33); // 33ms interval for smoother animation (approximately 30fps)
-    
+    }, 33);
+
     return () => clearInterval(animationInterval);
   }, [autoMode, handleAutoPassengers, mapData.buses, busAnimations]);
   
@@ -1466,7 +1483,22 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     }
   };
 
-  // Update the deployNewBus function to handle errors
+  // Add a function to verify bus sequence
+  const verifyBusSequence = (buses: Bus[]): number => {
+    const busNumbers = buses
+      .map(bus => parseInt(bus.id.replace('Bus', '')))
+      .sort((a, b) => a - b);
+    
+    // Find the first missing number in sequence
+    for (let i = 1; i <= 4; i++) {
+      if (!busNumbers.includes(i)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  // Update the deployNewBus function to ensure sequential deployment
   const deployNewBus = useCallback(() => {
     try {
       if (totalBusesDeployed >= 4) {
@@ -1474,18 +1506,27 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         return;
       }
 
-      const newBusId = `Bus${totalBusesDeployed + 1}`;
-      console.log(`Deploying new bus: ${newBusId}`);
-
       setMapData(prevData => {
-        // Check if bus with this ID already exists
-        if (prevData.buses.some(bus => bus.id === newBusId)) {
-          console.log(`Bus ${newBusId} already exists, skipping deployment`);
+        // Verify the current sequence and get the next bus number
+        const nextBusNumber = verifyBusSequence(prevData.buses);
+        console.log(`Verified bus sequence. Next bus should be: Bus${nextBusNumber}`);
+
+        if (nextBusNumber === -1 || nextBusNumber > 4) {
+          console.log("Invalid bus number or maximum reached");
+          return prevData;
+        }
+
+        const busId = `Bus${nextBusNumber}`;
+        console.log(`Attempting to deploy ${busId}. Current buses: ${prevData.buses.map(b => b.id).join(', ')}`);
+
+        // Check if bus already exists
+        if (prevData.buses.some(bus => bus.id === busId)) {
+          console.log(`Bus ${busId} already exists, skipping deployment`);
           return prevData;
         }
 
         const newBus: Bus = {
-          id: newBusId,
+          id: busId,
           position: {
             x: 100,
             y: 300,
@@ -1498,29 +1539,37 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
           currentStopIndex: 0
         };
 
-        // Update bus directions for the new bus
+        // Update bus directions
         setBusDirections(prev => ({
           ...prev,
-          [newBusId]: { isMovingForward: true }
+          [busId]: { isMovingForward: true }
         }));
 
-        setTotalBusesDeployed(prev => prev + 1);
-        console.log(`Bus ${newBusId} deployed. Total buses: ${totalBusesDeployed + 1}/4`);
+        // Update next bus ID ref
+        nextBusIdRef.current = nextBusNumber + 1;
 
+        // Update total buses deployed
+        const newBuses = [...prevData.buses, newBus];
+        setTotalBusesDeployed(newBuses.length);
+
+        console.log(`Successfully deployed ${busId}. Total buses: ${newBuses.length}`);
         return {
           ...prevData,
-          buses: [...prevData.buses, newBus]
+          buses: newBuses
         };
       });
     } catch (error) {
       console.error("Error deploying new bus:", error);
+      // Reset deployment state on error
+      clearDeploymentFlag();
+      pendingDeploymentRef.current = true; // Mark for retry
     }
   }, [totalBusesDeployed]);
 
   // Update the deployment timer effect
   useEffect(() => {
     if (autoMode && totalBusesDeployed < 4) {
-      console.log(`Starting deployment timer. Buses deployed: ${totalBusesDeployed}/4`);
+      console.log(`Starting deployment timer. Current buses: ${totalBusesDeployed}/4`);
       
       // Clear any existing timers
       clearDeploymentFlag();
@@ -1532,21 +1581,37 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
       // Start the countdown
       deploymentIntervalRef.current = setInterval(() => {
         setDeploymentTimer(prev => {
+          // Check if we have a pending deployment from previous error
+          if (pendingDeploymentRef.current && !isDeployingRef.current) {
+            console.log("Attempting to process pending deployment");
+            isDeployingRef.current = true;
+            setTimeout(() => {
+              deployNewBus();
+              pendingDeploymentRef.current = false;
+              clearDeploymentFlag();
+            }, 100);
+          }
+
           // Ensure timer doesn't go negative
           if (prev <= 0) {
-            // Only attempt deployment if not already deploying and under limit
-            if (!isDeployingRef.current && totalBusesDeployed < 4) {
-              console.log("Timer reached 0, attempting bus deployment");
-              // Set deploying flag
+            const canDeploy = !isDeployingRef.current && totalBusesDeployed < 4;
+
+            if (canDeploy) {
+              console.log("Timer reached 0, initiating new bus deployment");
               isDeployingRef.current = true;
               
-              // Set a safety timeout to clear the deployment flag after 5 seconds
+              // Set a safety timeout
               deploymentTimeoutRef.current = setTimeout(() => {
                 console.log("Safety timeout triggered - clearing deployment flag");
                 clearDeploymentFlag();
+                // Mark for retry if we haven't reached max buses
+                if (totalBusesDeployed < 4) {
+                  pendingDeploymentRef.current = true;
+                  console.log("Marking deployment for retry");
+                }
               }, 5000);
               
-              // Deploy new bus with a small delay to ensure state is updated
+              // Attempt deployment
               setTimeout(() => {
                 try {
                   deployNewBus();
@@ -1556,9 +1621,10 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
               }, 100);
             } else {
               console.log("Skipping deployment:", 
-                isDeployingRef.current ? "Deployment in progress" : "Maximum buses reached");
+                isDeployingRef.current ? "Deployment in progress" : 
+                totalBusesDeployed >= 4 ? "Maximum buses reached" : "Unknown reason");
             }
-            return 45; // Reset timer regardless
+            return 45; // Reset timer
           }
           return prev - 1;
         });
@@ -1567,21 +1633,24 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
       // Cleanup function
       return () => {
         clearDeploymentFlag();
+        pendingDeploymentRef.current = false;
         if (deploymentIntervalRef.current) {
           clearInterval(deploymentIntervalRef.current);
           deploymentIntervalRef.current = null;
         }
       };
     } else if (!autoMode) {
-      // Reset timer and flags when auto mode is turned off
+      // Reset all states when auto mode is turned off
       setDeploymentTimer(45);
       clearDeploymentFlag();
+      pendingDeploymentRef.current = false;
+      lastStopUpdateRef.current = {}; // Clear the last stop updates
       if (deploymentIntervalRef.current) {
         clearInterval(deploymentIntervalRef.current);
         deploymentIntervalRef.current = null;
       }
     }
-  }, [autoMode, totalBusesDeployed, deployNewBus]); // Include deployNewBus in dependencies
+  }, [autoMode, totalBusesDeployed, deployNewBus]);
 
   // Make the visualRoutes available in the context
   const contextValue = {
