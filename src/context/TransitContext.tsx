@@ -30,6 +30,8 @@ interface TransitContextProps {
   toggleAutoMode: () => void;
   visualRoutes: Record<string, RouteInfo>;
   isCalculatingRoute: Record<string, boolean>;
+  deploymentTimer: number;
+  totalBusesDeployed: number;
 }
 
 // Visual route for display
@@ -133,6 +135,15 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   
   // Add a state to track route calculation status
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<Record<string, boolean>>({});
+  
+  // Add these new states and refs near the top of TransitProvider
+  const [deploymentTimer, setDeploymentTimer] = useState<number>(45);
+  const [totalBusesDeployed, setTotalBusesDeployed] = useState<number>(1); // Start with 1 bus
+  const deploymentIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Add this near the top with other refs
+  const isDeployingRef = useRef<boolean>(false);
+  const deploymentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Build transit graph from stops
   const buildTransitGraph = useCallback(async () => {
@@ -1446,6 +1457,132 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     };
   });
 
+  // Add a safety function to clear stuck deployment flag
+  const clearDeploymentFlag = () => {
+    isDeployingRef.current = false;
+    if (deploymentTimeoutRef.current) {
+      clearTimeout(deploymentTimeoutRef.current);
+      deploymentTimeoutRef.current = null;
+    }
+  };
+
+  // Update the deployNewBus function to handle errors
+  const deployNewBus = useCallback(() => {
+    try {
+      if (totalBusesDeployed >= 4) {
+        console.log("Cannot deploy new bus: Maximum buses reached");
+        return;
+      }
+
+      const newBusId = `Bus${totalBusesDeployed + 1}`;
+      console.log(`Deploying new bus: ${newBusId}`);
+
+      setMapData(prevData => {
+        // Check if bus with this ID already exists
+        if (prevData.buses.some(bus => bus.id === newBusId)) {
+          console.log(`Bus ${newBusId} already exists, skipping deployment`);
+          return prevData;
+        }
+
+        const newBus: Bus = {
+          id: newBusId,
+          position: {
+            x: 100,
+            y: 300,
+            lat: 12.9347,
+            lng: 77.6230
+          },
+          capacity: 20,
+          currentPassengers: 0,
+          route: [...prevData.stops],
+          currentStopIndex: 0
+        };
+
+        // Update bus directions for the new bus
+        setBusDirections(prev => ({
+          ...prev,
+          [newBusId]: { isMovingForward: true }
+        }));
+
+        setTotalBusesDeployed(prev => prev + 1);
+        console.log(`Bus ${newBusId} deployed. Total buses: ${totalBusesDeployed + 1}/4`);
+
+        return {
+          ...prevData,
+          buses: [...prevData.buses, newBus]
+        };
+      });
+    } catch (error) {
+      console.error("Error deploying new bus:", error);
+    }
+  }, [totalBusesDeployed]);
+
+  // Update the deployment timer effect
+  useEffect(() => {
+    if (autoMode && totalBusesDeployed < 4) {
+      console.log(`Starting deployment timer. Buses deployed: ${totalBusesDeployed}/4`);
+      
+      // Clear any existing timers
+      clearDeploymentFlag();
+      if (deploymentIntervalRef.current) {
+        clearInterval(deploymentIntervalRef.current);
+        deploymentIntervalRef.current = null;
+      }
+      
+      // Start the countdown
+      deploymentIntervalRef.current = setInterval(() => {
+        setDeploymentTimer(prev => {
+          // Ensure timer doesn't go negative
+          if (prev <= 0) {
+            // Only attempt deployment if not already deploying and under limit
+            if (!isDeployingRef.current && totalBusesDeployed < 4) {
+              console.log("Timer reached 0, attempting bus deployment");
+              // Set deploying flag
+              isDeployingRef.current = true;
+              
+              // Set a safety timeout to clear the deployment flag after 5 seconds
+              deploymentTimeoutRef.current = setTimeout(() => {
+                console.log("Safety timeout triggered - clearing deployment flag");
+                clearDeploymentFlag();
+              }, 5000);
+              
+              // Deploy new bus with a small delay to ensure state is updated
+              setTimeout(() => {
+                try {
+                  deployNewBus();
+                } finally {
+                  clearDeploymentFlag();
+                }
+              }, 100);
+            } else {
+              console.log("Skipping deployment:", 
+                isDeployingRef.current ? "Deployment in progress" : "Maximum buses reached");
+            }
+            return 45; // Reset timer regardless
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      // Cleanup function
+      return () => {
+        clearDeploymentFlag();
+        if (deploymentIntervalRef.current) {
+          clearInterval(deploymentIntervalRef.current);
+          deploymentIntervalRef.current = null;
+        }
+      };
+    } else if (!autoMode) {
+      // Reset timer and flags when auto mode is turned off
+      setDeploymentTimer(45);
+      clearDeploymentFlag();
+      if (deploymentIntervalRef.current) {
+        clearInterval(deploymentIntervalRef.current);
+        deploymentIntervalRef.current = null;
+      }
+    }
+  }, [autoMode, totalBusesDeployed, deployNewBus]); // Include deployNewBus in dependencies
+
   // Make the visualRoutes available in the context
   const contextValue = {
     mapData: {
@@ -1459,7 +1596,9 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     autoMode,
     toggleAutoMode,
     visualRoutes,
-    isCalculatingRoute
+    isCalculatingRoute,
+    deploymentTimer,
+    totalBusesDeployed
   };
 
   return (

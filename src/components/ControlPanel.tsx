@@ -222,6 +222,26 @@ const PassengerValue = styled.div`
   font-weight: bold;
 `;
 
+const DeploymentStatus = styled.div`
+  background: rgba(40, 40, 40, 0.9);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const TimerDisplay = styled.div`
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #3498db;
+  margin: 5px 0;
+`;
+
+const BusCounter = styled.div`
+  font-size: 1.1em;
+  color: #bbb;
+`;
+
 const ControlPanel: React.FC = () => {
   const { 
     mapData, 
@@ -230,13 +250,27 @@ const ControlPanel: React.FC = () => {
     moveBusToNextStop, 
     busAnimations,
     autoMode,
-    toggleAutoMode
+    toggleAutoMode,
+    deploymentTimer,
+    totalBusesDeployed
   } = useTransit();
 
   return (
     <>
       {/* Side Panel for Passenger Display */}
       <SidePanel>
+        <h3>System Status</h3>
+        {autoMode && totalBusesDeployed < 4 && (
+          <DeploymentStatus>
+            <h4>Next Bus Deployment</h4>
+            <TimerDisplay>
+              {Math.floor(deploymentTimer / 60)}:{(deploymentTimer % 60).toString().padStart(2, '0')}
+            </TimerDisplay>
+            <BusCounter>
+              Buses Deployed: {totalBusesDeployed}/4
+            </BusCounter>
+          </DeploymentStatus>
+        )}
         <h3>Passengers</h3>
         {mapData.buses.map(bus => {
           const isFull = bus.currentPassengers >= bus.capacity;
