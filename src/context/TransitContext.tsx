@@ -1,6 +1,11 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { MapData, Bus, Stop, Position } from '../types';
 import { initialMapData } from '../data/mapData';
+import { 
+  incrementStationVisit, 
+  resetStationCounts, 
+  setAutomationStatus 
+} from '../utils/stationTracker';
 
 // Graph representation for Dijkstra's algorithm
 interface Graph {
@@ -1016,6 +1021,10 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         console.log(`\n--- Passenger Update for Bus ${bus.id} at ${currentStop.name} ---`);
         console.log(`Current passengers: ${updatedPassengers}/${bus.capacity}`);
         
+        // Increment the visit count for the current station
+        incrementStationVisit(currentStop.name);
+        console.log(`Recorded visit at station: ${currentStop.name}`);
+        
         // PASSENGER EXIT RULES
         
         // Special case for Bellandur - make all passengers exit at final stop
@@ -1197,10 +1206,8 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         
         // Handle auto passenger management when animation is complete
         if (animationCompleted && autoMode) {
-          // Use setTimeout to avoid state update during render
-          console.log("Animation completed - triggering passenger management");
+          console.log("Animation completed - checking bus status");
           
-          // Get the bus that just completed its animation
           const completedBus = mapData.buses.find(bus => bus.id === completedBusId);
           
           if (completedBus) {
@@ -1208,24 +1215,25 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             const currentStopId = currentStop.id;
             const lastStopId = lastPassengerStopRef.current[completedBusId];
             
-            // Only process passengers if we haven't processed them at this stop yet
             if (currentStopId !== lastStopId) {
-              console.log(`Processing passengers for bus ${completedBusId} at stop ${currentStopId}`);
-              
-              // Update the last stop reference
+              console.log(`Bus ${completedBusId} arrived at ${currentStop.name}`);
               lastPassengerStopRef.current[completedBusId] = currentStopId;
               
               setTimeout(() => {
-                // Check if the bus reached Bellandur
-                if (currentStop.id === "Bellandur") {
-                  console.log(`%c🚌 BUS ${completedBusId} REACHED BELLANDUR - FINAL STOP. No further movement allowed.`, 
-                            'background-color: #27ae60; color: white; padding: 4px; font-weight: bold;');
+                // Check if all buses have reached Bellandur
+                const allBusesAtBellandur = mapData.buses.every(bus => 
+                  bus.route[bus.currentStopIndex].id === "Bellandur"
+                );
+                
+                if (allBusesAtBellandur) {
+                  console.log("All buses have reached Bellandur - Resetting station counts");
+                  resetStationCounts();
+                } else if (currentStop.id === "Bellandur") {
+                  console.log(`Bus ${completedBusId} reached Bellandur, waiting for other buses`);
                 }
                 
                 handleAutoPassengers();
               }, 100);
-            } else {
-              console.log(`Skipping duplicate passenger processing at ${currentStopId} for bus ${completedBusId}`);
             }
           }
         }
@@ -1305,7 +1313,12 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
   
   // Toggle auto mode
   const toggleAutoMode = () => {
-    setAutoMode(prev => !prev);
+    const newAutoMode = !autoMode;
+    setAutoMode(newAutoMode);
+    setAutomationStatus(newAutoMode);
+    if (!newAutoMode) {
+      resetStationCounts();
+    }
   };
   
   // Calculate current position during animation - updated to follow route path
