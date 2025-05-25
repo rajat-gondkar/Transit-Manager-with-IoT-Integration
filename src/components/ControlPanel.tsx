@@ -181,6 +181,47 @@ const ModeBadge = styled.span<{ $active: boolean }>`
   color: white;
 `;
 
+const SidePanel = styled.div`
+  position: fixed;
+  right: 20px;
+  top: 100px;
+  width: 250px;
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: 10px;
+  padding: 15px;
+  color: #fff;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+`;
+
+const PassengerDisplay = styled.div`
+  padding: 10px;
+  background: rgba(40, 40, 40, 0.9);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 10px;
+`;
+
+const BusPassengerInfo = styled.div<{ $isFull: boolean }>`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  margin: 5px 0;
+  background: ${props => props.$isFull ? 'rgba(231, 76, 60, 0.2)' : 'rgba(46, 204, 113, 0.2)'};
+  border-radius: 6px;
+  border: 1px solid ${props => props.$isFull ? 'rgba(231, 76, 60, 0.4)' : 'rgba(46, 204, 113, 0.4)'};
+`;
+
+const BusLabel = styled.div`
+  font-weight: bold;
+`;
+
+const PassengerValue = styled.div`
+  font-size: 1.1em;
+  font-weight: bold;
+`;
+
 const ControlPanel: React.FC = () => {
   const { 
     mapData, 
@@ -191,177 +232,196 @@ const ControlPanel: React.FC = () => {
     autoMode,
     toggleAutoMode
   } = useTransit();
-  
+
   return (
-    <PanelContainer>
-      <Title>Bengaluru Transit Control Panel</Title>
-      <Subtitle>
-        Buses will use the express route (in red) when they reach full capacity
-      </Subtitle>
-      
-      <AutoModeContainer>
-        <AutoModeButton 
-          $active={autoMode} 
-          onClick={toggleAutoMode}
-        >
-          {autoMode ? "Disable Auto Mode" : "Enable Auto Mode"}
-          <ModeBadge $active={autoMode}>
-            {autoMode ? "ACTIVE" : "OFF"}
-          </ModeBadge>
-        </AutoModeButton>
-      </AutoModeContainer>
-      
-      <BusList>
+    <>
+      {/* Side Panel for Passenger Display */}
+      <SidePanel>
+        <h3>Passengers</h3>
         {mapData.buses.map(bus => {
           const isFull = bus.currentPassengers >= bus.capacity;
-          const currentStop = bus.route[bus.currentStopIndex];
-          const animation = busAnimations[bus.id] || { isMoving: false, isUsingMainRoad: false };
-          const { isMoving, isUsingMainRoad } = animation;
-          
-          // Determine if the bus is going in reverse direction
-          const isFirstHalfOfRoute = bus.currentStopIndex < Math.floor(bus.route.length / 2);
-          const isGoingForward = bus.id === 'Bus1' && isFirstHalfOfRoute;
-          
-          // Determine the next stop (either normal or main road)
-          let nextStopDisplay;
-          if (isMoving) {
-            // Already moving
-            if (isUsingMainRoad) {
-              nextStopDisplay = (
-                <RouteHighlight $isFull={true} $isUsingMainRoad={true}>
-                  {bus.route[bus.currentStopIndex].name} (via Main Road)
-                </RouteHighlight>
-              );
-            } else {
-              nextStopDisplay = (
-                <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
-                  {bus.route[bus.currentStopIndex].name}
-                </RouteHighlight>
-              );
-            }
-          } else if (isFull) {
-            // Find next main stop
-            let nextMainStopIndex = bus.currentStopIndex;
-            for (let i = bus.currentStopIndex + 1; i < bus.route.length; i++) {
-              if (bus.route[i].isMainStop) {
-                nextMainStopIndex = i;
-                break;
+          return (
+            <BusPassengerInfo key={bus.id} $isFull={isFull}>
+              <BusLabel>{bus.id}</BusLabel>
+              <PassengerValue>
+                {bus.currentPassengers}/{bus.capacity}
+              </PassengerValue>
+            </BusPassengerInfo>
+          );
+        })}
+      </SidePanel>
+
+      {/* Main Control Panel at Bottom */}
+      <PanelContainer>
+        <Title>Bengaluru Transit Control Panel</Title>
+        <Subtitle>
+          Buses will use the express route (in red) when they reach full capacity
+        </Subtitle>
+        
+        <AutoModeContainer>
+          <AutoModeButton 
+            $active={autoMode} 
+            onClick={toggleAutoMode}
+          >
+            {autoMode ? "Disable Auto Mode" : "Enable Auto Mode"}
+            <ModeBadge $active={autoMode}>
+              {autoMode ? "ACTIVE" : "OFF"}
+            </ModeBadge>
+          </AutoModeButton>
+        </AutoModeContainer>
+        
+        <BusList>
+          {mapData.buses.map(bus => {
+            const isFull = bus.currentPassengers >= bus.capacity;
+            const currentStop = bus.route[bus.currentStopIndex];
+            const animation = busAnimations[bus.id] || { isMoving: false, isUsingMainRoad: false };
+            const { isMoving, isUsingMainRoad } = animation;
+            
+            // Determine if the bus is going in reverse direction
+            const isFirstHalfOfRoute = bus.currentStopIndex < Math.floor(bus.route.length / 2);
+            const isGoingForward = bus.id === 'Bus1' && isFirstHalfOfRoute;
+            
+            // Determine the next stop (either normal or main road)
+            let nextStopDisplay;
+            if (isMoving) {
+              // Already moving
+              if (isUsingMainRoad) {
+                nextStopDisplay = (
+                  <RouteHighlight $isFull={true} $isUsingMainRoad={true}>
+                    {bus.route[bus.currentStopIndex].name} (via Main Road)
+                  </RouteHighlight>
+                );
+              } else {
+                nextStopDisplay = (
+                  <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
+                    {bus.route[bus.currentStopIndex].name}
+                  </RouteHighlight>
+                );
               }
-            }
-            if (nextMainStopIndex === bus.currentStopIndex) {
-              // Look from the beginning if needed
-              for (let i = 0; i < bus.currentStopIndex; i++) {
+            } else if (isFull) {
+              // Find next main stop
+              let nextMainStopIndex = bus.currentStopIndex;
+              for (let i = bus.currentStopIndex + 1; i < bus.route.length; i++) {
                 if (bus.route[i].isMainStop) {
                   nextMainStopIndex = i;
                   break;
                 }
               }
+              if (nextMainStopIndex === bus.currentStopIndex) {
+                // Look from the beginning if needed
+                for (let i = 0; i < bus.currentStopIndex; i++) {
+                  if (bus.route[i].isMainStop) {
+                    nextMainStopIndex = i;
+                    break;
+                  }
+                }
+              }
+              const nextMainStop = bus.route[nextMainStopIndex];
+              nextStopDisplay = (
+                <RouteHighlight $isFull={true} $isUsingMainRoad={false}>
+                  {nextMainStop.name} (via Main Road)
+                </RouteHighlight>
+              );
+            } else {
+              // Normal movement
+              let nextStopIndex;
+              
+              // Check if we're at the end of the route to determine direction
+              if (bus.currentStopIndex === bus.route.length - 1) {
+                // At the end, go backwards
+                nextStopIndex = bus.currentStopIndex - 1;
+              } else if (bus.currentStopIndex === 0) {
+                // At start, go forwards
+                nextStopIndex = 1;
+              } else {
+                // Normal movement in current direction
+                nextStopIndex = isGoingForward ? bus.currentStopIndex + 1 : bus.currentStopIndex - 1;
+              }
+              
+              if (nextStopIndex >= 0 && nextStopIndex < bus.route.length) {
+                const nextStop = bus.route[nextStopIndex];
+                nextStopDisplay = (
+                  <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
+                    {nextStop.name}
+                  </RouteHighlight>
+                );
+              } else {
+                // Fallback if index is out of bounds
+                nextStopDisplay = (
+                  <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
+                    Unknown
+                  </RouteHighlight>
+                );
+              }
             }
-            const nextMainStop = bus.route[nextMainStopIndex];
-            nextStopDisplay = (
-              <RouteHighlight $isFull={true} $isUsingMainRoad={false}>
-                {nextMainStop.name} (via Main Road)
-              </RouteHighlight>
+
+            return (
+              <BusCard 
+                key={bus.id}
+                $isFull={isFull}
+                $isMoving={isMoving}
+                $isUsingMainRoad={isUsingMainRoad}
+              >
+                <BusHeader>
+                  <BusId>{bus.id}</BusId>
+                  <BusCapacity $isFull={isFull}>
+                    {bus.currentPassengers}/{bus.capacity} Passengers
+                  </BusCapacity>
+                </BusHeader>
+                
+                <BusLocation>
+                  {isMoving ? 'Moving to:' : 'Currently at:'} {currentStop.name}
+                </BusLocation>
+                
+                <BusRoute>
+                  Direction: <DirectionIndicator $isReverse={!isGoingForward}>
+                    {isGoingForward 
+                      ? 'Forward (Koramangala → Bellandur)' 
+                      : 'Reverse (Bellandur → Koramangala)'}
+                  </DirectionIndicator>
+                </BusRoute>
+                
+                <BusRoute>
+                  Next stop: {nextStopDisplay}
+                </BusRoute>
+                
+                <BusStatus $isMoving={isMoving} $isUsingMainRoad={isUsingMainRoad}>
+                  {isMoving 
+                    ? (isUsingMainRoad ? 'Using Express Route' : 'Moving on Regular Road')
+                    : 'Stopped'}
+                </BusStatus>
+                
+                <BusControls>
+                  <ControlButton 
+                    color="#27ae60"
+                    onClick={() => addPassenger(bus.id)}
+                    disabled={isFull || isMoving || autoMode}
+                  >
+                    Board Passenger
+                  </ControlButton>
+                  
+                  <ControlButton 
+                    color="#e74c3c"
+                    onClick={() => removePassenger(bus.id)}
+                    disabled={bus.currentPassengers <= 0 || isMoving || autoMode}
+                  >
+                    Exit Passenger
+                  </ControlButton>
+                  
+                  <ControlButton 
+                    color="#3498db"
+                    onClick={() => moveBusToNextStop(bus.id)}
+                    disabled={isMoving || autoMode}
+                  >
+                    {isFull ? "Move (Direct)" : "Move Bus"}
+                  </ControlButton>
+                </BusControls>
+              </BusCard>
             );
-          } else {
-            // Normal movement
-            let nextStopIndex;
-            
-            // Check if we're at the end of the route to determine direction
-            if (bus.currentStopIndex === bus.route.length - 1) {
-              // At the end, go backwards
-              nextStopIndex = bus.currentStopIndex - 1;
-            } else if (bus.currentStopIndex === 0) {
-              // At start, go forwards
-              nextStopIndex = 1;
-            } else {
-              // Normal movement in current direction
-              nextStopIndex = isGoingForward ? bus.currentStopIndex + 1 : bus.currentStopIndex - 1;
-            }
-            
-            if (nextStopIndex >= 0 && nextStopIndex < bus.route.length) {
-              const nextStop = bus.route[nextStopIndex];
-              nextStopDisplay = (
-                <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
-                  {nextStop.name}
-                </RouteHighlight>
-              );
-            } else {
-              // Fallback if index is out of bounds
-              nextStopDisplay = (
-                <RouteHighlight $isFull={false} $isUsingMainRoad={false}>
-                  Unknown
-                </RouteHighlight>
-              );
-            }
-          }
-          
-          return (
-            <BusCard 
-              key={bus.id} 
-              $isFull={isFull} 
-              $isMoving={isMoving}
-              $isUsingMainRoad={isUsingMainRoad}
-            >
-              <BusHeader>
-                <BusId>{bus.id}</BusId>
-                <BusCapacity $isFull={isFull}>
-                  {bus.currentPassengers}/{bus.capacity} Passengers
-                </BusCapacity>
-              </BusHeader>
-              
-              <BusLocation>
-                {isMoving ? 'Moving to:' : 'Currently at:'} {currentStop.name}
-              </BusLocation>
-              
-              <BusRoute>
-                Direction: <DirectionIndicator $isReverse={!isGoingForward}>
-                  {isGoingForward 
-                    ? 'Forward (Koramangala → Bellandur)' 
-                    : 'Reverse (Bellandur → Koramangala)'}
-                </DirectionIndicator>
-              </BusRoute>
-              
-              <BusRoute>
-                Next stop: {nextStopDisplay}
-              </BusRoute>
-              
-              <BusStatus $isMoving={isMoving} $isUsingMainRoad={isUsingMainRoad}>
-                {isMoving 
-                  ? (isUsingMainRoad ? 'Using Express Route' : 'Moving on Regular Road')
-                  : 'Stopped'}
-              </BusStatus>
-              
-              <BusControls>
-                <ControlButton 
-                  color="#27ae60"
-                  onClick={() => addPassenger(bus.id)}
-                  disabled={isFull || isMoving || autoMode}
-                >
-                  Board Passenger
-                </ControlButton>
-                
-                <ControlButton 
-                  color="#e74c3c"
-                  onClick={() => removePassenger(bus.id)}
-                  disabled={bus.currentPassengers <= 0 || isMoving || autoMode}
-                >
-                  Exit Passenger
-                </ControlButton>
-                
-                <ControlButton 
-                  color="#3498db"
-                  onClick={() => moveBusToNextStop(bus.id)}
-                  disabled={isMoving || autoMode}
-                >
-                  {isFull ? "Move (Direct)" : "Move Bus"}
-                </ControlButton>
-              </BusControls>
-            </BusCard>
-          );
-        })}
-      </BusList>
-    </PanelContainer>
+          })}
+        </BusList>
+      </PanelContainer>
+    </>
   );
 };
 

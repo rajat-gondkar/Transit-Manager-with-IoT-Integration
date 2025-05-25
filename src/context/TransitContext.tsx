@@ -46,12 +46,25 @@ interface BusAnimation {
   progress: number;
   routePath?: Position[]; // Array of positions representing the route
   routeIndex?: number;    // Current index in the route path
+  totalDistance?: number; // Total distance to travel
+  velocity: number;      // Pixels per frame
 }
 
 // Interface to track bus direction state
 interface BusDirection {
   isMovingForward: boolean; // true if moving from A→D, false if moving from D→A
 }
+
+// Add constant for bus velocity (adjust this value to change overall speed)
+const BASE_BUS_VELOCITY = 0.8; // Reduced from 2 to 0.8 pixels per frame at 30fps
+const MAIN_ROAD_VELOCITY_MULTIPLIER = 1.2; // Reduced from 1.5 to 1.2 for smoother express movement
+
+// Helper function to calculate distance between two points
+const calculateDistance = (pos1: Position, pos2: Position): number => {
+  const dx = (pos2.x - pos1.x);
+  const dy = (pos2.y - pos1.y);
+  return Math.sqrt(dx * dx + dy * dy);
+};
 
 const TransitContext = createContext<TransitContextProps | undefined>(undefined);
 
@@ -964,7 +977,12 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         isUsingMainRoad: isUsingMainRoad,
         progress: 0,
         routePath: calculatedPath,
-        routeIndex: 0
+        routeIndex: 0,
+        totalDistance: calculatedPath.reduce((total, point, i) => {
+          if (i === 0) return 0;
+          return total + calculateDistance(calculatedPath[i - 1], point);
+        }, 0),
+        velocity: BASE_BUS_VELOCITY * (isUsingMainRoad ? MAIN_ROAD_VELOCITY_MULTIPLIER : 1)
       }
     }));
     
@@ -1006,45 +1024,36 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
           console.log(`🚶‍♂️ STOP: ${currentStop.name} - All ${exiting} passengers exit at final stop`);
           updatedPassengers = 0; // All passengers exit at Bellandur
         } 
-        // Regular passengers exit logic for other main stops
+        // Main stops: 1-10 passengers exit, no entry
         else if (currentStop.isMainStop && updatedPassengers > 0) {
           // Random number of passengers exit (1-10)
           const exitingPassengers = Math.min(
-            Math.floor(Math.random() * 10) + 1, 
+            Math.floor(Math.random() * 10) + 1, // 1-10 passengers exit
             updatedPassengers
           );
-          console.log(`🚶‍♂️ STOP: ${currentStop.name} - ${exitingPassengers} passengers exit (random 1-10)`);
+          console.log(`🚶‍♂️ STOP: ${currentStop.name} - ${exitingPassengers} passengers exit (1-10 at main stop)`);
           updatedPassengers -= exitingPassengers;
-        } else {
-          console.log(`No passengers exiting at ${currentStop.name} (not a main stop or bus empty)`);
+          console.log(`No new passengers boarding at ${currentStop.name} (main stop - exits only)`);
         }
-        
-        // PASSENGER ENTRY RULES
-        
-        // Passengers can board at any stop if there's capacity, except at Bellandur (final stop)
-        if (updatedPassengers < bus.capacity && currentStop.id !== "Bellandur") {
-          // Random number of passengers enter (0-5)
+        // Intermediate stops: 0-10 passengers can enter, no exits
+        else if (!currentStop.isMainStop && currentStop.id !== "Bellandur") {
+          // Random number of passengers enter (0-10)
           const enteringPassengers = Math.min(
-            Math.floor(Math.random() * 6),
+            Math.floor(Math.random() * 11), // 0-10 passengers enter
             bus.capacity - updatedPassengers
           );
           
           if (enteringPassengers > 0) {
-            console.log(`🧍‍♂️ STOP: ${currentStop.name} - ${enteringPassengers} new passengers board (random 0-5)`);
+            console.log(`🧍‍♂️ STOP: ${currentStop.name} - ${enteringPassengers} new passengers board (0-10 at intermediate stop)`);
+            updatedPassengers += enteringPassengers;
+            
+            // Check if bus is now full
+            if (updatedPassengers >= bus.capacity) {
+              console.log(`⚠️ BUS NOW FULL: ${updatedPassengers}/${bus.capacity} - Will use express route to next main stop`);
+            }
           } else {
             console.log(`No new passengers boarding at ${currentStop.name}`);
           }
-          
-          updatedPassengers += enteringPassengers;
-          
-          // Check if bus is now full
-          if (updatedPassengers >= bus.capacity) {
-            console.log(`⚠️ BUS NOW FULL: ${updatedPassengers}/${bus.capacity} - Will use express route to next main stop`);
-          }
-        } else if (currentStop.id === "Bellandur") {
-          console.log(`No boarding at ${currentStop.name} (final stop)`);
-        } else {
-          console.log(`No boarding at ${currentStop.name} (bus already full)`);
         }
         
         console.log(`Final passengers after stop: ${updatedPassengers}/${bus.capacity}`);
@@ -1062,7 +1071,7 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     });
   }, []);
   
-  // Animation interval - updated for route-based movement
+  // Animation interval - updated for velocity-based movement
   useEffect(() => {
     const animationInterval = setInterval(() => {
       // Check if there are any active animations first, to avoid unnecessary state updates
@@ -1080,10 +1089,14 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             // If we have a route path, move along it
             if (animation.routePath && animation.routePath.length > 1 && animation.routeIndex !== undefined) {
               const routeLength = animation.routePath.length;
-              // Calculate the total progress through the route
-              const progressStep = 1 / (routeLength - 1);
+              
+              // Calculate progress based on velocity and total distance
+              const progressIncrement = animation.velocity / (animation.totalDistance || 100);
+              const newProgress = animation.progress + progressIncrement;
+              
+              // Calculate the current segment index
               const currentIndex = Math.min(
-                Math.floor(animation.progress / progressStep),
+                Math.floor(newProgress * (routeLength - 1)),
                 routeLength - 2
               );
               
@@ -1096,15 +1109,15 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
                 
                 // Log the progress through the route
                 if (currentIndex % 5 === 0 || currentIndex === routeLength - 2) {
-                  console.log(`Bus ${busId} route progress: ${currentIndex + 1}/${routeLength} points (${Math.round(animation.progress * 100)}%)`);
+                  console.log(`Bus ${busId} route progress: ${currentIndex + 1}/${routeLength} points (${Math.round(newProgress * 100)}%)`);
                 }
               }
               
               // If still moving along the route
-              if (animation.progress < 1) {
+              if (newProgress < 1) {
                 updatedAnimations[busId] = {
                   ...updatedAnimations[busId],
-                  progress: animation.progress + 0.01  // Reduced speed further for smoother movement
+                  progress: newProgress
                 };
               } else {
                 // Animation complete
@@ -1138,11 +1151,15 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
                 });
               }
             } else {
-              // Fallback to old animation if routePath is not available
-              if (animation.progress < 1) {
+              // Fallback to velocity-based direct movement
+              const distance = calculateDistance(animation.startPosition, animation.endPosition);
+              const progressIncrement = animation.velocity / distance;
+              const newProgress = animation.progress + progressIncrement;
+              
+              if (newProgress < 1) {
                 updatedAnimations[busId] = {
                   ...animation,
-                  progress: animation.progress + 0.01
+                  progress: newProgress
                 };
               } else {
                 // Animation complete
@@ -1302,9 +1319,8 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
       // If we have a route path, interpolate between route points
       if (animation.routePath && animation.routePath.length > 1 && animation.routeIndex !== undefined) {
         const routeLength = animation.routePath.length;
-        const progressStep = 1 / (routeLength - 1);
         const currentIndex = Math.min(
-          Math.floor(animation.progress / progressStep), 
+          Math.floor(animation.progress * (routeLength - 1)),
           routeLength - 2
         );
         const nextIndex = currentIndex + 1;
@@ -1313,30 +1329,30 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
         if (nextIndex < routeLength) {
           const current = animation.routePath[currentIndex];
           const next = animation.routePath[nextIndex];
-          const subProgress = (animation.progress - currentIndex * progressStep) / progressStep;
+          const segmentProgress = (animation.progress * (routeLength - 1)) % 1;
           
           // Ensure coordinates are valid before interpolating
           if (current && next && typeof current.lat === 'number' && typeof next.lat === 'number' &&
               typeof current.lng === 'number' && typeof next.lng === 'number') {
             // Interpolate between current and next point
-            const lat = current.lat + (next.lat - current.lat) * subProgress;
-            const lng = current.lng + (next.lng - current.lng) * subProgress;
+            const lat = current.lat + (next.lat - current.lat) * segmentProgress;
+            const lng = current.lng + (next.lng - current.lng) * segmentProgress;
             
             // For backwards compatibility, also interpolate x and y
-            const x = (current.x || 0) + ((next.x || 0) - (current.x || 0)) * subProgress;
-            const y = (current.y || 0) + ((next.y || 0) - (current.y || 0)) * subProgress;
+            const x = (current.x || 0) + ((next.x || 0) - (current.x || 0)) * segmentProgress;
+            const y = (current.y || 0) + ((next.y || 0) - (current.y || 0)) * segmentProgress;
             
             return { x, y, lat, lng };
           }
         }
       }
       
-      // Fallback to direct interpolation
+      // Fallback to direct interpolation with velocity-based progress
       const { startPosition, endPosition, progress } = animation;
       
       // Calculate both x,y for legacy UI and lat,lng for map
-      let posX = startPosition.x + (endPosition.x - startPosition.x) * progress;
-      let posY = startPosition.y + (endPosition.y - startPosition.y) * progress;
+      const posX = startPosition.x + (endPosition.x - startPosition.x) * progress;
+      const posY = startPosition.y + (endPosition.y - startPosition.y) * progress;
       
       // Calculate lat/lng using linear interpolation
       const lat = startPosition.lat !== undefined && endPosition.lat !== undefined
