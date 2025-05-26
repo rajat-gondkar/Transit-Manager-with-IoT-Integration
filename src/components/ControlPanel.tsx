@@ -260,7 +260,7 @@ const ControlPanel: React.FC = () => {
       {/* Side Panel for Passenger Display */}
       <SidePanel>
         <h3>System Status</h3>
-        {autoMode && totalBusesDeployed < 4 && (
+        {totalBusesDeployed < 4 && (
           <DeploymentStatus>
             <h4>Next Bus Deployment</h4>
             <TimerDisplay>
@@ -269,6 +269,9 @@ const ControlPanel: React.FC = () => {
             <BusCounter>
               Buses Deployed: {totalBusesDeployed}/4
             </BusCounter>
+            <div style={{ fontSize: '0.95em', color: '#888', marginTop: 4 }}>
+              Mode: <b>{autoMode ? 'Auto' : 'Manual'}</b>
+            </div>
           </DeploymentStatus>
         )}
         <h3>Passengers</h3>

@@ -1454,11 +1454,17 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             const newPassengerCount = bus.currentPassengers + 1;
             
             // Check if bus becomes full at an intermediate station
-            if (newPassengerCount === bus.capacity && !currentStop.isMainStop && autoMode && totalBusesDeployed < 4) {
+            if (newPassengerCount === bus.capacity && !currentStop.isMainStop && totalBusesDeployed < 4) {
               console.log(`🚨 Bus ${busId} is FULL at intermediate station ${currentStop.name}`);
               console.log(`🚌 Triggering immediate bus deployment...`);
               pendingDeploymentRef.current = true;
               fullBusIdRef.current = busId; // Store the ID of the full bus
+              fullBusStateRef.current = {
+                busId,
+                currentStop: currentStop.name,
+                currentStopIndex: bus.currentStopIndex,
+                route: [...bus.route]
+              };
               setDeploymentTimer(1); // Set to 1 to trigger immediate deployment
             }
             
@@ -1666,46 +1672,37 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
     }
   }, [totalBusesDeployed]);
 
-  // Update the deployment timer effect
+  // Update the deployment timer effect for auto mode
   useEffect(() => {
     if (autoMode && totalBusesDeployed < 4) {
-      console.log(`\n🔄 Starting deployment system`);
+      console.log(`\n🔄 Starting deployment system (auto mode)`);
       console.log(`📊 Current fleet size: ${totalBusesDeployed}/4`);
-      
       const timer = setInterval(() => {
         setDeploymentTimer(prevTimer => {
           // Handle immediate deployment from full bus
           if (pendingDeploymentRef.current && prevTimer <= 1) {
             const fullBusState = fullBusStateRef.current;
-            console.log(`\n🚨 IMMEDIATE DEPLOYMENT TRIGGERED`);
+            console.log(`\n🚨 IMMEDIATE DEPLOYMENT TRIGGERED (auto mode)`);
             console.log(`📝 Reason: Bus full at intermediate station ${fullBusState?.currentStop || 'Unknown'}`);
             if (fullBusState) {
               console.log(`📍 Last recorded state: ${JSON.stringify(fullBusState, null, 2)}`);
             }
-            
-            // Don't clear the state here - let deployNewBus handle it
             isDeployingRef.current = true;
             deployNewBus();
             lastDeploymentTimeRef.current = Date.now();
             return 45; // Reset timer
           }
-          
           // Handle regular timer-based deployment
           if (prevTimer <= 0) {
-            // Add debounce check - ensure at least 2 seconds between deployments
             const now = Date.now();
             if (now - lastDeploymentTimeRef.current < 2000) {
               console.log(`⏳ Deployment throttled - too soon after last deployment`);
               return 45; // Reset timer
             }
-
-            console.log(`\n⏰ TIMER-BASED DEPLOYMENT TRIGGERED`);
+            console.log(`\n⏰ TIMER-BASED DEPLOYMENT TRIGGERED (auto mode)`);
             console.log(`📝 Reason: Regular interval (45s) completed`);
-            
-            // Clear any pending immediate deployment state for regular deployments
             pendingDeploymentRef.current = false;
             fullBusStateRef.current = null;
-            
             if (!isDeployingRef.current) {
               deployNewBus();
               lastDeploymentTimeRef.current = now;
@@ -1720,18 +1717,80 @@ export const TransitProvider: React.FC<TransitProviderProps> = ({ children }) =>
             }
             return 45; // Reset timer
           }
-
-          // Log timer status every 15 seconds
           if (prevTimer % 15 === 0) {
             console.log(`⏳ Next regular deployment in: ${prevTimer}s`);
           }
-          
           return prevTimer - 1;
         });
       }, 1000);
-
       deploymentIntervalRef.current = timer;
+      return () => {
+        if (deploymentIntervalRef.current) {
+          clearInterval(deploymentIntervalRef.current);
+          deploymentIntervalRef.current = null;
+        }
+      };
+    } else {
+      if (deploymentIntervalRef.current) {
+        clearInterval(deploymentIntervalRef.current);
+        deploymentIntervalRef.current = null;
+      }
+      setDeploymentTimer(45);
+    }
+  }, [autoMode, totalBusesDeployed, deployNewBus]);
 
+  // --- MANUAL MODE: Enable the same deployment logic when autoMode is false ---
+  useEffect(() => {
+    if (!autoMode && totalBusesDeployed < 4) {
+      console.log(`\n🔄 Starting deployment system (manual mode)`);
+      console.log(`📊 Current fleet size: ${totalBusesDeployed}/4`);
+      const timer = setInterval(() => {
+        setDeploymentTimer(prevTimer => {
+          // Handle immediate deployment from full bus
+          if (pendingDeploymentRef.current && prevTimer <= 1) {
+            const fullBusState = fullBusStateRef.current;
+            console.log(`\n🚨 IMMEDIATE DEPLOYMENT TRIGGERED (manual mode)`);
+            console.log(`📝 Reason: Bus full at intermediate station ${fullBusState?.currentStop || 'Unknown'}`);
+            if (fullBusState) {
+              console.log(`📍 Last recorded state: ${JSON.stringify(fullBusState, null, 2)}`);
+            }
+            isDeployingRef.current = true;
+            deployNewBus();
+            lastDeploymentTimeRef.current = Date.now();
+            return 45; // Reset timer
+          }
+          // Handle regular timer-based deployment
+          if (prevTimer <= 0) {
+            const now = Date.now();
+            if (now - lastDeploymentTimeRef.current < 2000) {
+              console.log(`⏳ Deployment throttled - too soon after last deployment`);
+              return 45; // Reset timer
+            }
+            console.log(`\n⏰ TIMER-BASED DEPLOYMENT TRIGGERED (manual mode)`);
+            console.log(`📝 Reason: Regular interval (45s) completed`);
+            pendingDeploymentRef.current = false;
+            fullBusStateRef.current = null;
+            if (!isDeployingRef.current) {
+              deployNewBus();
+              lastDeploymentTimeRef.current = now;
+            } else {
+              console.log(`⏳ Waiting for previous deployment to complete...`);
+              setTimeout(() => {
+                if (totalBusesDeployed < 4) {
+                  deployNewBus();
+                  lastDeploymentTimeRef.current = Date.now();
+                }
+              }, 500);
+            }
+            return 45; // Reset timer
+          }
+          if (prevTimer % 15 === 0) {
+            console.log(`⏳ Next regular deployment in: ${prevTimer}s`);
+          }
+          return prevTimer - 1;
+        });
+      }, 1000);
+      deploymentIntervalRef.current = timer;
       return () => {
         if (deploymentIntervalRef.current) {
           clearInterval(deploymentIntervalRef.current);
