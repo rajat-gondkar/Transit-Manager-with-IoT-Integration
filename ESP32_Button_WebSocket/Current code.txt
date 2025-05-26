@@ -1,0 +1,118 @@
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+
+const char* ssid = "Nothing Phone (2)";
+const char* password = "9066869986R#";
+
+// Updated pin list (replacing 35 → 19, and 34 → 21)
+const int buttonPins[12] = {
+  13, 12, 14, 27, 26, 25, 33, 32, 19, 21, 23, 22
+};
+
+// Button mapping: 0-2: Bus1, 3-5: Bus2, 6-8: Bus3, 9-11: Bus4
+const char* actions[3] = {"BOARD", "EXIT", "MOVE"};
+
+bool lastButtonState[12];
+
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP32 Button Log</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; background: #f7f7f7; }
+    h2 { color: #333; }
+    #log { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 20px; max-width: 400px; margin: 0 auto; min-height: 200px; }
+    .msg { font-size: 1.2em; margin-bottom: 8px; color: #222; }
+  </style>
+</head>
+<body>
+  <h2>ESP32 Button Press Log</h2>
+  <div id="log"></div>
+  <script>
+    const log = document.getElementById('log');
+    const ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+    ws.onmessage = function(event) {
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.textContent = event.data;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    };
+    ws.onopen = function() {
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.style.color = '#0a0';
+      div.textContent = '[WebSocket connected]';
+      log.appendChild(div);
+    };
+    ws.onclose = function() {
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.style.color = '#a00';
+      div.textContent = '[WebSocket disconnected]';
+      log.appendChild(div);
+    };
+  </script>
+</body>
+</html>
+)rawliteral";
+
+void notifyClients(const char* msg) {
+  ws.textAll(msg);
+}
+
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.println("WebSocket client connected");
+  } else if (type == WS_EVT_DISCONNECT) {
+    Serial.println("WebSocket client disconnected");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  for (int i = 0; i < 12; i++) {
+    pinMode(buttonPins[i], INPUT_PULLUP);
+    lastButtonState[i] = digitalRead(buttonPins[i]);
+  }
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected.");
+  Serial.print("ESP32 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+  server.begin();
+}
+
+void loop() {
+  ws.cleanupClients();
+  for (int i = 0; i < 12; i++) {
+    bool currentState = digitalRead(buttonPins[i]);
+    if (lastButtonState[i] == HIGH && currentState == LOW) { // Button pressed
+      int busNum = (i / 3) + 1; // 1 to 4
+      int actionIdx = i % 3; // 0: BOARD, 1: EXIT, 2: MOVE
+      char msg[16];
+      snprintf(msg, sizeof(msg), "B%d_%s", busNum, actions[actionIdx]);
+      Serial.printf("Button %d pressed: %s\n", i + 1, msg);
+      notifyClients(msg);
+    }
+    lastButtonState[i] = currentState;
+  }
+  delay(10);
+}

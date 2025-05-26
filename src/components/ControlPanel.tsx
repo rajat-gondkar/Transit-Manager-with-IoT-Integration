@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { useTransit } from '../context/TransitContext';
 
@@ -254,6 +254,58 @@ const ControlPanel: React.FC = () => {
     deploymentTimer,
     totalBusesDeployed
   } = useTransit();
+
+  // --- ESP32 WebSocket Integration for Manual Mode ---
+  const wsRef = useRef<WebSocket | null>(null);
+  useEffect(() => {
+    // Only connect once
+    if (wsRef.current) return;
+    const ws = new window.WebSocket('ws://192.168.66.123/ws');
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('[ESP32 WS] Connected to ESP32 WebSocket');
+    };
+    ws.onclose = () => {
+      console.log('[ESP32 WS] Disconnected from ESP32 WebSocket');
+    };
+    ws.onerror = (err) => {
+      console.error('[ESP32 WS] Error:', err);
+    };
+    ws.onmessage = (event) => {
+      if (autoMode) return; // Only allow in manual mode
+      const msg = event.data.trim();
+      // Expected: 'B1_BOARD', 'B2_EXIT', 'B3_MOVE', ...
+      const match = msg.match(/^B(\d)_(BOARD|EXIT|MOVE)$/);
+      if (!match) {
+        console.warn('[ESP32 WS] Unknown message:', msg);
+        return;
+      }
+      const busNum = match[1];
+      const action = match[2];
+      const busId = `Bus${busNum}`;
+      // Find the bus exists
+      const bus = mapData.buses.find(b => b.id === busId);
+      if (!bus) {
+        console.warn(`[ESP32 WS] Bus not found: ${busId}`);
+        return;
+      }
+      // Only trigger if not moving and not in autoMode
+      const animation = busAnimations[busId] || { isMoving: false };
+      if (animation.isMoving) return;
+      if (action === 'BOARD') {
+        if (bus.currentPassengers < bus.capacity) addPassenger(busId);
+      } else if (action === 'EXIT') {
+        if (bus.currentPassengers > 0) removePassenger(busId);
+      } else if (action === 'MOVE') {
+        moveBusToNextStop(busId);
+      }
+    };
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [autoMode, mapData.buses, busAnimations, addPassenger, removePassenger, moveBusToNextStop]);
 
   return (
     <>
