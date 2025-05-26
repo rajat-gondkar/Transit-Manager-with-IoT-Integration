@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useTransit } from '../context/TransitContext';
+import ReconnectingWebSocket from 'reconnecting-websocket';
 
 const PanelContainer = styled.div`
   width: 1000px;
@@ -242,6 +243,11 @@ const BusCounter = styled.div`
   color: #bbb;
 `;
 
+const RECONNECT_BASE_DELAY = 2000; // 2 seconds
+const RECONNECT_MAX_DELAY = 20000; // 20 seconds
+const MAX_RETRIES_PER_MIN = 10;
+const RELAY_WS_URL = 'ws://192.168.66.4:8080/browser';
+
 const ControlPanel: React.FC = () => {
   const { 
     mapData, 
@@ -255,42 +261,56 @@ const ControlPanel: React.FC = () => {
     totalBusesDeployed
   } = useTransit();
 
-  // --- ESP32 WebSocket Integration for Manual Mode ---
-  const wsRef = useRef<WebSocket | null>(null);
-  useEffect(() => {
-    // Only connect once
-    if (wsRef.current) return;
-    const ws = new window.WebSocket('ws://192.168.66.123/ws');
-    wsRef.current = ws;
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [wsErrorMsg, setWsErrorMsg] = useState<string | null>(null);
+  const wsRef = useRef<ReconnectingWebSocket | null>(null);
 
+  useEffect(() => {
+    setWsStatus('connecting');
+    setWsErrorMsg(null);
+    const ws = new ReconnectingWebSocket(RELAY_WS_URL);
+    wsRef.current = ws;
     ws.onopen = () => {
-      console.log('[ESP32 WS] Connected to ESP32 WebSocket');
+      setWsStatus('connected');
+      setWsErrorMsg(null);
+      console.log('[Relay WS] Connected to Node.js relay');
     };
     ws.onclose = () => {
-      console.log('[ESP32 WS] Disconnected from ESP32 WebSocket');
+      setWsStatus('disconnected');
+      setWsErrorMsg('Disconnected from relay server');
+      console.log('[Relay WS] Disconnected from Node.js relay');
     };
-    ws.onerror = (err) => {
-      console.error('[ESP32 WS] Error:', err);
+    ws.onerror = (err: any) => {
+      setWsStatus('error');
+      setWsErrorMsg('WebSocket error');
+      console.error('[Relay WS] Error:', err);
     };
-    ws.onmessage = (event) => {
-      if (autoMode) return; // Only allow in manual mode
-      const msg = event.data.trim();
-      // Expected: 'B1_BOARD', 'B2_EXIT', 'B3_MOVE', ...
+    ws.onmessage = (event: any) => {
+      if (event.data instanceof Blob) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const msg = String(reader.result).trim();
+          handleRelayMessage(msg);
+        };
+        reader.readAsText(event.data);
+        return;
+      }
+      const msg = String(event.data).trim();
+      handleRelayMessage(msg);
+    };
+
+    function handleRelayMessage(msg: string) {
       const match = msg.match(/^B(\d)_(BOARD|EXIT|MOVE)$/);
       if (!match) {
-        console.warn('[ESP32 WS] Unknown message:', msg);
+        console.warn('[Relay WS] Unknown message:', msg);
         return;
       }
       const busNum = match[1];
       const action = match[2];
       const busId = `Bus${busNum}`;
-      // Find the bus exists
+      if (autoMode) return;
       const bus = mapData.buses.find(b => b.id === busId);
-      if (!bus) {
-        console.warn(`[ESP32 WS] Bus not found: ${busId}`);
-        return;
-      }
-      // Only trigger if not moving and not in autoMode
+      if (!bus) return;
       const animation = busAnimations[busId] || { isMoving: false };
       if (animation.isMoving) return;
       if (action === 'BOARD') {
@@ -300,7 +320,8 @@ const ControlPanel: React.FC = () => {
       } else if (action === 'MOVE') {
         moveBusToNextStop(busId);
       }
-    };
+    }
+
     return () => {
       ws.close();
       wsRef.current = null;
@@ -324,6 +345,14 @@ const ControlPanel: React.FC = () => {
             <div style={{ fontSize: '0.95em', color: '#888', marginTop: 4 }}>
               Mode: <b>{autoMode ? 'Auto' : 'Manual'}</b>
             </div>
+            <div style={{fontSize: '0.95em', color: wsStatus === 'connected' ? '#0a0' : wsStatus === 'connecting' ? '#888' : '#a00', marginTop: 4}}>
+              ESP32 Connection: <b>{wsStatus}</b>
+            </div>
+            {wsStatus === 'error' && (
+              <div style={{ color: '#e74c3c', marginTop: 8, fontWeight: 'bold' }}>
+                {wsErrorMsg || 'WebSocket connection error.'}
+              </div>
+            )}
           </DeploymentStatus>
         )}
         <h3>Passengers</h3>

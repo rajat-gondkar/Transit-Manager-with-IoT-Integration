@@ -1,9 +1,10 @@
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>
-#include <AsyncTCP.h>
+#include <WebSocketsClient.h>
 
-const char* ssid = "Nothing Phone (2)";
-const char* password = "9066869986R#";
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+const char* relay_host = "192.168.66.100"; // Node.js relay server IP
+const int relay_port = 8080;
 
 // Updated pin list (replacing 35 → 19, and 34 → 21)
 const int buttonPins[12] = {
@@ -14,64 +15,16 @@ const int buttonPins[12] = {
 const char* actions[3] = {"BOARD", "EXIT", "MOVE"};
 
 bool lastButtonState[12];
+unsigned long lastButtonTime[12] = {0}; // For debouncing
+const unsigned long debounceDelay = 150; // ms
 
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
+WebSocketsClient webSocket;
 
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <title>ESP32 Button Log</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 40px; background: #f7f7f7; }
-    h2 { color: #333; }
-    #log { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 20px; max-width: 400px; margin: 0 auto; min-height: 200px; }
-    .msg { font-size: 1.2em; margin-bottom: 8px; color: #222; }
-  </style>
-</head>
-<body>
-  <h2>ESP32 Button Press Log</h2>
-  <div id="log"></div>
-  <script>
-    const log = document.getElementById('log');
-    const ws = new WebSocket(`ws://${window.location.hostname}/ws`);
-    ws.onmessage = function(event) {
-      const div = document.createElement('div');
-      div.className = 'msg';
-      div.textContent = event.data;
-      log.appendChild(div);
-      log.scrollTop = log.scrollHeight;
-    };
-    ws.onopen = function() {
-      const div = document.createElement('div');
-      div.className = 'msg';
-      div.style.color = '#0a0';
-      div.textContent = '[WebSocket connected]';
-      log.appendChild(div);
-    };
-    ws.onclose = function() {
-      const div = document.createElement('div');
-      div.className = 'msg';
-      div.style.color = '#a00';
-      div.textContent = '[WebSocket disconnected]';
-      log.appendChild(div);
-    };
-  </script>
-</body>
-</html>
-)rawliteral";
-
-void notifyClients(const char* msg) {
-  ws.textAll(msg);
-}
-
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
-               AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  if (type == WS_EVT_CONNECT) {
-    Serial.println("WebSocket client connected");
-  } else if (type == WS_EVT_DISCONNECT) {
-    Serial.println("WebSocket client disconnected");
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+  if (type == WStype_CONNECTED) {
+    Serial.println("Connected to relay server");
+  } else if (type == WStype_DISCONNECTED) {
+    Serial.println("Disconnected from relay server");
   }
 }
 
@@ -81,6 +34,7 @@ void setup() {
   for (int i = 0; i < 12; i++) {
     pinMode(buttonPins[i], INPUT_PULLUP);
     lastButtonState[i] = digitalRead(buttonPins[i]);
+    lastButtonTime[i] = 0;
   }
 
   WiFi.begin(ssid, password);
@@ -92,25 +46,24 @@ void setup() {
   Serial.print("ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
 
-  ws.onEvent(onWsEvent);
-  server.addHandler(&ws);
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/html", index_html);
-  });
-  server.begin();
+  webSocket.begin(relay_host, relay_port, "/esp32");
+  webSocket.onEvent(webSocketEvent);
 }
 
 void loop() {
-  ws.cleanupClients();
+  webSocket.loop();
+  unsigned long now = millis();
   for (int i = 0; i < 12; i++) {
     bool currentState = digitalRead(buttonPins[i]);
-    if (lastButtonState[i] == HIGH && currentState == LOW) { // Button pressed
+    // Debounce: only send if enough time has passed since last press
+    if (lastButtonState[i] == HIGH && currentState == LOW && (now - lastButtonTime[i] > debounceDelay)) {
+      lastButtonTime[i] = now;
       int busNum = (i / 3) + 1; // 1 to 4
       int actionIdx = i % 3; // 0: BOARD, 1: EXIT, 2: MOVE
       char msg[16];
       snprintf(msg, sizeof(msg), "B%d_%s", busNum, actions[actionIdx]);
       Serial.printf("Button %d pressed: %s\n", i + 1, msg);
-      notifyClients(msg);
+      webSocket.sendTXT(msg);
     }
     lastButtonState[i] = currentState;
   }
